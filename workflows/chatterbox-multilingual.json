@@ -1,0 +1,48 @@
+{
+  "1": {
+    "class_type": "FL_ChatterboxMultilingualTTS",
+    "inputs": {
+      "text": "Hello, this is a test.",
+      "language": "English (en)",
+      "exaggeration": 0.5,
+      "cfg_weight": 0.5,
+      "temperature": 0.8,
+      "repetition_penalty": 2,
+      "min_p": 0.05,
+      "top_p": 1,
+      "seed": 2101809668,
+      "use_cpu": false,
+      "keep_model_loaded": false,
+      "audio_prompt": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "FL_ChatterboxMultilingualTTS"
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "common_voice_en_42699867.mp3"
+    },
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "3": {
+    "class_type": "SaveAudioMP3",
+    "inputs": {
+      "filename_prefix": "vno/voice",
+      "quality": "V0",
+      "audio": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "SaveAudioMP3"
+    }
+  }
+}
