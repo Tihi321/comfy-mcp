@@ -1,0 +1,36 @@
+# Mapping for chatterbox-multilingual.json (use as the engine `custom:chatterbox-multilingual`).
+# Each field is { node: <node id in the API JSON>, input: <input name> }.
+kind: audio
+text: { node: "1", input: text }
+language: { node: "1", input: language }
+seed: { node: "1", input: seed }
+# The voice reference clip: uploaded to ComfyUI's input folder and set on the LoadAudio node.
+voiceRef: { node: "2", input: audio }
+output: "3"
+# Language code -> the value the node's language dropdown expects.
+# NOTE: the Chatterbox multilingual node has NO Croatian (hr); `hr` is deliberately missing here.
+# For Croatian use another TTS Audio Suite engine (IndexTTS-2) with its own workflow + mapping.
+languages:
+  en: English (en)
+  ar: Arabic (ar)
+  da: Danish (da)
+  de: German (de)
+  el: Greek (el)
+  es: Spanish (es)
+  fi: Finnish (fi)
+  fr: French (fr)
+  he: Hebrew (he)
+  hi: Hindi (hi)
+  it: Italian (it)
+  ja: Japanese (ja)
+  ko: Korean (ko)
+  ms: Malay (ms)
+  nl: Dutch (nl)
+  no: Norwegian (no)
+  pl: Polish (pl)
+  pt: Portuguese (pt)
+  ru: Russian (ru)
+  sv: Swedish (sv)
+  sw: Swahili (sw)
+  tr: Turkish (tr)
+  zh: Chinese (zh)

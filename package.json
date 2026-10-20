@@ -1,0 +1,34 @@
+{
+  "name": "comfy-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ComfyUI MCP server: images, image edits, background removal, music, speech and saved workflows from the local ComfyUI, over Streamable HTTP",
+  "main": "./out/index.js",
+  "bin": "./out/index.js",
+  "scripts": {
+    "build": "vite build --config vite.config.ts --logLevel warn",
+    "start": "node out/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.3"
+  },
+  "packageManager": "yarn@4.13.0",
+  "author": "Tihomir Selak"
+}
