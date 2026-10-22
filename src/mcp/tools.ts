@@ -174,7 +174,7 @@ export function buildTools(svc: ComfyService): Tool[] {
       async (a) => {
         const ids = a.job_ids === undefined ? svc.jobs.active().map((j) => j.id) : Array.isArray(a.job_ids) ? a.job_ids : [a.job_ids]
         const unknown = ids.filter((id) => !svc.jobs.get(id))
-        if (unknown.length > 0) throw new Error(`unknown job id(s): ${unknown.join(', ')} (jobs are forgotten when the server restarts)`)
+        if (unknown.length > 0) throw new Error(`unknown job id(s): ${unknown.join(', ')} (only the last 200 finished jobs are kept)`)
         const finished = await svc.jobs.wait(ids, (a.timeout_seconds ?? 120) * 1000)
         return { all_finished: finished, jobs: ids.map((id) => jobView(svc.jobs.get(id)!)) }
       }

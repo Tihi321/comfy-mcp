@@ -21,7 +21,7 @@ It is plain Node 24 (no Electron). It serves Streamable HTTP on `127.0.0.1:7460/
 | `cancel` | Remove a job's prompts from the ComfyUI queue, or interrupt the running one |
 | `free_memory` | Unload ComfyUI's models and free VRAM |
 
-**Jobs.** Each generation is a background job. A call waits up to `wait` seconds (default 45, `0` returns at once) and returns the paths. If the job is still running, it returns `job_id` instead; then call `wait`. ComfyUI runs one prompt at a time, so jobs queue. Jobs are held in memory, so a restart forgets them (written files stay).
+**Jobs.** Each generation is a background job. A call waits up to `wait` seconds (default 45, `0` returns at once) and returns the paths. If the job is still running, it returns `job_id` instead; then call `wait`. ComfyUI runs one prompt at a time, so jobs queue. Jobs are saved to a state file (`--state`, default `~/ComfyMCP/jobs.json`), so their ids survive a restart. Finished jobs keep their result (the last 200 are kept). A job that was running when the server stopped is resumed from its ComfyUI prompt ids and written to the same place. It ends as an error instead when it had not queued all its prompts yet, or when ComfyUI no longer knows them because ComfyUI restarted too.
 
 **Outputs.** `out` is an absolute folder (file names are generated: `<kind>_<date>-<time>_<seed>.<ext>`) or an absolute file path. With several files, a file path gets `_1`, `_2`. The extension is whatever ComfyUI produced. `generate_music` takes its format from the `out` extension when `format` is not given. Without `out`, files go to the default folder (`--out`). ComfyUI keeps its own copy under `output/comfy-mcp/`.
 
@@ -56,6 +56,7 @@ node out/index.js --port 7460 --comfy http://127.0.0.1:8188 --out C:\projects\Pe
 | `--workflows` (`;`-separated) | `COMFY_MCP_WORKFLOWS` | none (always searched: `workflows/`, then ComfyUI's user workflows) |
 | `--files` (JSON) | `COMFY_MCP_FILES` | the file names in `src/comfy/graphs.ts`, e.g. `{"zImage":{"unet":"other.safetensors"}}` |
 | `--job-timeout` (s) | `COMFY_MCP_JOB_TIMEOUT` | 1800 |
+| `--state` | `COMFY_MCP_STATE` | `~/ComfyMCP/jobs.json` |
 | | `COMFY_MCP_TOKEN` | no auth |
 
 In the creative hub, `pwsh -File scripts\hub.ps1 start comfy-mcp` starts it (after `comfyui`), `hub.ps1 check comfy-mcp` handshakes, and `hub.ps1 call comfy-mcp generate_image '{"prompt":"..."}'` calls a tool. For Claude elsewhere:

@@ -2,9 +2,10 @@
 
 What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\creative-hub`) used it. Moved here from the hub's `ROADMAP.md` on 2026-10-22. Finished work is in `README.md` (CMC-01, the MCP server). Fix items on a ticket branch (`CMC-NN_<what>`) cut from `master`.
 
-## Where it stands (2026-10-22, master bde46f0)
+## Where it stands (2026-10-22, branch CMC-03_roadmap-items)
 
 - MCP server on `127.0.0.1:7460/mcp`, generating through ComfyUI on 8188: images, edits, cutouts, music, speech and saved workflows. Outputs go to the hub's `output/comfy` unless a tool gets an absolute `out` path.
+- Every item below is done (CMC-03 to CMC-06, one commit each). Open follow-ups: bypassed subgraphs are dropped rather than passed through; the rest of the TTS Audio Suite engines are not mapped.
 
 ## Workflows
 
@@ -20,4 +21,5 @@ What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\
 
 ## Robustness
 
-- **Jobs live in memory.** A restart forgets job ids (written files stay).
+- [x] **Jobs live in memory.** A restart forgets job ids (written files stay).
+  Done in CMC-06: jobs are saved to `--state` (default `~/ComfyMCP/jobs.json`), and running jobs are resumed after a restart. Live check: a `generate_image` job survived a hard kill and finished after the restart. A job killed within 250 ms of starting (before its first save) is still lost.

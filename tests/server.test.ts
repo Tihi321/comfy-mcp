@@ -65,7 +65,7 @@ describe('MCP server against a fake ComfyUI', () => {
   beforeAll(async () => {
     await new Promise<void>((r) => comfy.server.listen(0, '127.0.0.1', r))
     const comfyUrl = `http://127.0.0.1:${(comfy.server.address() as AddressInfo).port}`
-    const config = loadConfig(['--port', '0', '--comfy', comfyUrl, '--out', outDir], {})
+    const config = loadConfig(['--port', '0', '--comfy', comfyUrl, '--out', outDir, '--state', path.join(outDir, 'jobs.json')], {})
     mcp = new McpHttpServer({ host: { tools: buildTools(new ComfyService(config)) }, port: 0 })
     url = (await mcp.start()).url!
   })
@@ -189,7 +189,7 @@ describe('MCP server against a fake ComfyUI', () => {
 
 describe('bearer token', () => {
   it('rejects a request without the token', async () => {
-    const config = loadConfig(['--port', '0'], {})
+    const config = loadConfig(['--port', '0', '--state', path.join(mkdtempSync(path.join(tmpdir(), 'cmcp-state-')), 'jobs.json')], {})
     const server = new McpHttpServer({ host: { tools: buildTools(new ComfyService(config)) }, port: 0, token: 'secret' })
     const { url } = await server.start()
     const r = await fetch(url!, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })

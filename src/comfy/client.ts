@@ -74,6 +74,14 @@ export async function queueState(base: string, timeoutMs = 8000): Promise<QueueS
   }
 }
 
+/** Whether ComfyUI still knows a prompt: queued, running or in its history. Throws when ComfyUI is unreachable. */
+export async function promptKnown(base: string, promptId: string, timeoutMs = 8000): Promise<boolean> {
+  const q = await queueState(base, timeoutMs)
+  if (q.runningIds.includes(promptId) || q.pendingIds.includes(promptId)) return true
+  const history = await fetchJson<Record<string, unknown>>(`${base}/history/${encodeURIComponent(promptId)}`, { timeoutMs })
+  return !!history?.[promptId]
+}
+
 export interface SystemStats {
   system?: { comfyui_version?: string; ram_total?: number; ram_free?: number; os?: string }
   devices?: Array<{ name?: string; type?: string; vram_total?: number; vram_free?: number; torch_vram_total?: number; torch_vram_free?: number }>
