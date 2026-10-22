@@ -10,10 +10,10 @@ It is plain Node 24 (no Electron). It serves Streamable HTTP on `127.0.0.1:7460/
 |---|---|
 | `status` | ComfyUI version, VRAM/RAM, queue, which engines are ready (model files present), background-removal models, model files per folder, running jobs, the output folder |
 | `generate_image` | Text to PNG. Engines `z-image-turbo` (default, 1024²), `qwen-image-2.1-turbo`, `qwen-image-2.1` (1328²), `krea2-turbo`. `prompt, negative, width, height, seed, count, steps, cfg` |
-| `edit_image` | Qwen-Image 2.1 edit: `image` / `images` (1-16 absolute paths) + instruction. The size follows the first image unless `width`/`height` are given |
+| `edit_image` | Qwen-Image 2.1 edit: `image` / `images` (1-16 absolute paths) + instruction. Engines `qwen-image-2.1-edit` (default, 25 steps) and `qwen-image-2.1-turbo-edit` (fixed 8-step sigma schedule, much faster; ignores `steps`). The size follows the first image unless `width`/`height` are given |
 | `remove_background` | BiRefNet through ComfyUI's core `RemoveBackground` node; writes a PNG with alpha |
 | `generate_music` | `ace-step-v1` (default), `ace-step-v1-instrumental`, `yue2`, `minimax-music-3`. `tags, lyrics, seconds, seed, steps, format` (mp3 default; flac, opus, wav) |
-| `generate_speech` | A mapped TTS workflow (default `chatterbox-multilingual`, 23 languages, no Croatian). `text, language, voice_ref` |
+| `generate_speech` | A mapped TTS workflow (`workflow`, default `chatterbox-multilingual`). `text, language, voice_ref, voice_text` (the words spoken in `voice_ref`). See **Speech** below |
 | `list_workflows` | Saved workflows in `workflows/`, extra folders, and ComfyUI's own `user/default/workflows`, each with its format (api/ui) and whether it can run |
 | `describe_workflow` | A workflow as an API graph: node ids, classes, titles, literal inputs, links, output nodes, mapping |
 | `run_workflow` | Run a saved workflow. `params: {"<node id or title>.<input>": value}` (or mapped names), `files: {"<node>.<input>": "<abs path>"}` (uploaded first). Seeds are randomized unless set or `randomize_seeds: false`. Every saved file is downloaded |
@@ -21,11 +21,23 @@ It is plain Node 24 (no Electron). It serves Streamable HTTP on `127.0.0.1:7460/
 | `cancel` | Remove a job's prompts from the ComfyUI queue, or interrupt the running one |
 | `free_memory` | Unload ComfyUI's models and free VRAM |
 
-**Jobs.** Each generation is a background job. A call waits up to `wait` seconds (default 45, `0` returns at once) and returns the paths. If the job is still running, it returns `job_id` instead; then call `wait`. ComfyUI runs one prompt at a time, so jobs queue. Jobs are held in memory, so a restart forgets them (written files stay).
+**Jobs.** Each generation is a background job. A call waits up to `wait` seconds (default 45, `0` returns at once) and returns the paths. If the job is still running, it returns `job_id` instead; then call `wait`. ComfyUI runs one prompt at a time, so jobs queue. Jobs are saved to a state file (`--state`, default `~/ComfyMCP/jobs.json`), so their ids survive a restart. Finished jobs keep their result (the last 200 are kept). A job that was running when the server stopped is resumed from its ComfyUI prompt ids and written to the same place. It ends as an error instead when it had not queued all its prompts yet, or when ComfyUI no longer knows them because ComfyUI restarted too.
 
 **Outputs.** `out` is an absolute folder (file names are generated: `<kind>_<date>-<time>_<seed>.<ext>`) or an absolute file path. With several files, a file path gets `_1`, `_2`. The extension is whatever ComfyUI produced. `generate_music` takes its format from the `out` extension when `format` is not given. Without `out`, files go to the default folder (`--out`). ComfyUI keeps its own copy under `output/comfy-mcp/`.
 
-**Workflows.** A workflow is either an API-format JSON (ComfyUI: Workflow → Export (API)), or a UI-format JSON without subgraphs; the server converts UI workflows using the live `/object_info`. An optional `<name>.map.yaml` next to it names the inputs for `prompt, negative, width, height, seed, steps, reference, text, language, voiceRef` and the `output` node (the same format as VN Studio's `custom:<name>` engines). `generate_speech` needs a mapping with `text`. ComfyUI's template workflows mostly use subgraphs; export those as API first.
+**Workflows.** A workflow is either an API-format JSON (ComfyUI: Workflow → Export (API)), or a UI-format JSON as the editor saves it; the server converts UI workflows using the live `/object_info`. Subgraphs (most of ComfyUI's templates use them) are expanded: an inner node gets the id `<instance>:<inner>`, e.g. `57:27`, and the instance's widget values become that node's inputs. A muted or bypassed subgraph is left out. An optional `<name>.map.yaml` next to it names the inputs for `prompt, negative, width, height, seed, steps, reference, text, language, voiceRef, voiceText` and the `output` node (the same format as VN Studio's `custom:<name>` engines). `languages` maps language codes to the node's values and limits the codes a workflow accepts; `defaultVoice` names the voice used without `voice_ref`; `needsVoiceText: true` makes `voice_text` required with `voice_ref`. `generate_speech` needs a mapping with `text`.
+
+**Speech.** The bundled TTS workflows in `workflows/`:
+
+| Workflow | Languages | Voice without `voice_ref` | Notes |
+|---|---|---|---|
+| `chatterbox-multilingual` (default) | 23, no Croatian | the workflow's clip, else the built-in voice | FL Chatterbox node |
+| `f5-tts` | en | `female_01` | cloning needs `voice_text` |
+| `indextts-2` | en, zh | `female_01` | TTS Audio Suite downloads missing IndexTTS-2 files on first use |
+| `qwen3-tts` | en, zh, ja, ko, de, fr, ru, pt, es, it | `female_01` | Qwen3-TTS 1.7B Base |
+| `higgs-audio-v3` | 100+, including Croatian (`hr`) | `higgs_audio/en_woman` | ~8 GB model, downloaded on first use; research / non-commercial licence |
+
+All but Chatterbox are TTS Audio Suite chains (engine node → Character Voices → Unified TTS Text → MP3) with the same node ids, so they share one mapping shape.
 
 ## Run
 
@@ -44,6 +56,7 @@ node out/index.js --port 7460 --comfy http://127.0.0.1:8188 --out C:\projects\Pe
 | `--workflows` (`;`-separated) | `COMFY_MCP_WORKFLOWS` | none (always searched: `workflows/`, then ComfyUI's user workflows) |
 | `--files` (JSON) | `COMFY_MCP_FILES` | the file names in `src/comfy/graphs.ts`, e.g. `{"zImage":{"unet":"other.safetensors"}}` |
 | `--job-timeout` (s) | `COMFY_MCP_JOB_TIMEOUT` | 1800 |
+| `--state` | `COMFY_MCP_STATE` | `~/ComfyMCP/jobs.json` |
 | | `COMFY_MCP_TOKEN` | no auth |
 
 In the creative hub, `pwsh -File scripts\hub.ps1 start comfy-mcp` starts it (after `comfyui`), `hub.ps1 check comfy-mcp` handshakes, and `hub.ps1 call comfy-mcp generate_image '{"prompt":"..."}'` calls a tool. For Claude elsewhere:

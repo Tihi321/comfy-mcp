@@ -30,14 +30,20 @@ export const mappingSchema = z.object({
   language: slotSchema.optional(),
   /** A LoadAudio input: the voice reference clip (uploaded first). */
   voiceRef: slotSchema.optional(),
+  /** The input that takes the transcript of the voice reference clip (some engines clone with it). */
+  voiceText: slotSchema.optional(),
   /** The node whose output is returned. */
   output: outputSchema,
   /** Language code (`en`, `de`) -> the value the language input expects, e.g. `English (en)`. */
   languages: z.record(z.string(), z.string()).optional(),
+  /** The voice the workflow speaks with when no voice reference is given (reported as the result's voice). */
+  defaultVoice: z.string().optional(),
+  /** Cloning a voice reference needs its transcript (voice_text). */
+  needsVoiceText: z.boolean().default(false),
   kind: z.enum(['image', 'audio']).optional()
 })
 export type Mapping = z.output<typeof mappingSchema>
-export const MAPPED_FIELDS = ['prompt', 'negative', 'width', 'height', 'seed', 'steps', 'reference', 'text', 'language', 'voiceRef'] as const
+export const MAPPED_FIELDS = ['prompt', 'negative', 'width', 'height', 'seed', 'steps', 'reference', 'text', 'language', 'voiceRef', 'voiceText'] as const
 export type MappedField = (typeof MAPPED_FIELDS)[number]
 /** Mapped fields that take a file path (uploaded to ComfyUI's input folder). */
 export const FILE_FIELDS: readonly MappedField[] = ['reference', 'voiceRef']
@@ -56,7 +62,7 @@ export interface WorkflowEntry {
   file: string
   format: 'api' | 'ui' | 'unknown'
   mapped: boolean
-  /** Why it cannot run as is (subgraphs, not a workflow). */
+  /** Why it cannot run as is (not a workflow). */
   problem?: string
 }
 
@@ -66,24 +72,13 @@ function isGraph(value: unknown): value is Graph {
   return entries.length > 0 && entries.every((n) => !!n && typeof n === 'object' && typeof (n as { class_type?: unknown }).class_type === 'string')
 }
 
-function isUi(value: unknown): value is UiWorkflow & { definitions?: { subgraphs?: Array<{ id: string; name?: string }> } } {
+function isUi(value: unknown): value is UiWorkflow {
   return !!value && typeof value === 'object' && Array.isArray((value as { nodes?: unknown }).nodes)
-}
-
-/** Node types of a UI workflow that are subgraph instances (their type is a subgraph id). */
-function subgraphNodes(ui: UiWorkflow & { definitions?: { subgraphs?: Array<{ id: string; name?: string }> } }): string[] {
-  const ids = new Map((ui.definitions?.subgraphs ?? []).map((s) => [s.id, s.name ?? s.id]))
-  return ui.nodes.filter((n) => ids.has(n.type)).map((n) => `${n.id} (${ids.get(n.type)})`)
 }
 
 function classify(raw: unknown): { format: WorkflowEntry['format']; problem?: string } {
   if (isGraph(raw)) return { format: 'api' }
-  if (isUi(raw)) {
-    const subs = subgraphNodes(raw)
-    return subs.length > 0
-      ? { format: 'ui', problem: `uses subgraphs (${subs.join(', ')}); open it in ComfyUI and use Export (API), then run the exported file` }
-      : { format: 'ui' }
-  }
+  if (isUi(raw)) return { format: 'ui' }
   return { format: 'unknown', problem: 'not a ComfyUI workflow' }
 }
 

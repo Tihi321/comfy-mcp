@@ -9,6 +9,7 @@ import {
   listModelFiles,
   objectInfo,
   postPrompt,
+  promptKnown,
   queueState,
   removalModelsOf,
   systemStats,
@@ -34,7 +35,7 @@ import {
   type Slot
 } from './comfy/workflows'
 import type { Config } from './config'
-import { JobManager, type Job } from './jobs'
+import { JobManager, JobStore, type Job, type OutTarget, type SaveSpec } from './jobs'
 
 /**
  * What the MCP tools drive: builds graphs, queues them on ComfyUI as background jobs, downloads the results and writes them to the
@@ -62,6 +63,7 @@ export interface ImageArgs {
 export interface EditArgs {
   prompt: string
   images: string[]
+  engine?: string
   negative?: string
   width?: number
   height?: number
@@ -86,6 +88,7 @@ export interface SpeechArgs {
   text: string
   language?: string
   voiceRef?: string
+  voiceText?: string
   seed?: number
   workflow?: string
   out?: string
@@ -98,15 +101,6 @@ export interface WorkflowArgs {
   outputNode?: string
   randomizeSeeds?: boolean
   out?: string
-}
-
-/** Where outputs go: a folder (names are made up) or one file path (numbered when a job writes several). */
-interface OutTarget {
-  dir: string
-  /** File stem when the caller named a file. */
-  stem?: string
-  /** The extension the caller asked for, without the dot. */
-  ext?: string
 }
 
 function stamp(): string {
@@ -126,7 +120,7 @@ export class ComfyService {
 
   constructor(readonly config: Config, private readonly log: (msg: string) => void = () => undefined) {
     this.files = mergeFiles(config.files as never)
-    this.jobs = new JobManager((job) => this.cancelPrompts(job), log)
+    this.jobs = new JobManager((job) => this.cancelPrompts(job), log, new JobStore(config.stateFile, log))
   }
 
   get base(): string {
@@ -165,11 +159,48 @@ export class ComfyService {
     return file
   }
 
-  /** Queues one graph and waits for its outputs. */
-  private async runGraph(job: Job, graph: Graph, signal: AbortSignal, onlyNode?: string): Promise<CollectedItem[]> {
-    const promptId = await postPrompt(this.base, graph)
-    job.promptIds.push(promptId)
-    return this.collect(job, promptId, signal, onlyNode)
+  /** Queues one graph on the job and persists its prompt id. */
+  private async queue(job: Job, graph: Graph): Promise<void> {
+    job.promptIds.push(await postPrompt(this.base, graph))
+    this.jobs.changed()
+  }
+
+  /** Collects and saves the job's prompts from `spec.saved` on: the one save path of live and resumed jobs. */
+  private async finish(job: Job, spec: SaveSpec, signal: AbortSignal): Promise<void> {
+    job.save = spec
+    for (let i = spec.saved; i < job.promptIds.length; i++) {
+      const items = await this.collect(job, job.promptIds[i]!, signal, spec.onlyNode)
+      if (spec.pick === 'all') {
+        for (const [j, item] of items.entries()) await this.save(job, item, spec.target, spec.prefix, j, items.length)
+      } else {
+        const item = spec.pick === 'audio' ? (items.find((it) => it.list === 'audio') ?? items[0]!) : items[0]!
+        await this.save(job, item, spec.target, spec.prefix, i, spec.total ?? 1, spec.seeds?.[i])
+      }
+      spec.saved = i + 1
+      this.jobs.changed()
+    }
+  }
+
+  /** Loads the saved jobs; running ones are re-attached to their ComfyUI prompts, or ended with an error when that is impossible. */
+  async restoreJobs(): Promise<void> {
+    const loaded = this.jobs.load()
+    if (loaded.length > 0) this.log(`restored ${loaded.length} job(s) from ${this.config.stateFile}`)
+    for (const job of loaded) {
+      if (job.state !== 'running') continue
+      const spec = job.save
+      if (!spec || job.promptIds.length < spec.prompts) {
+        this.jobs.fail(job, 'the server restarted before this job was queued on ComfyUI; run it again')
+        continue
+      }
+      this.jobs.resume(job, async (j, signal) => {
+        for (const id of j.promptIds.slice(spec.saved)) {
+          // an unreachable ComfyUI is not "unknown": the polling in finish keeps retrying until the job timeout
+          const known = await promptKnown(this.base, id).catch(() => true)
+          if (!known) throw new Error(`ComfyUI no longer has prompt ${id} (it was restarted?)`)
+        }
+        await this.finish(j, spec, signal)
+      })
+    }
   }
 
   private async collect(job: Job, promptId: string, signal: AbortSignal, onlyNode?: string): Promise<CollectedItem[]> {
@@ -228,22 +259,24 @@ export class ComfyService {
         height
       } as never)
     )
+    const spec: SaveSpec = { target, prefix: 'image', pick: 'first', prompts: count, total: count, seeds, saved: 0 }
     const info: Record<string, unknown> = { engine: engineId, width, height }
     if (a.negative && !engine.usesNegative) info.note = `${engineId} ignores the negative prompt (its template zeroes it)`
     return this.jobs.start('generate_image', `${engineId} ${width}x${height}${count > 1 ? ` x${count}` : ''}: ${prompt.slice(0, 80)}`, async (job, signal) => {
       job.seeds = seeds
+      job.save = spec
       // queue every image first, so ComfyUI works through them without waiting on our downloads
-      for (const graph of graphs) job.promptIds.push(await postPrompt(this.base, graph))
-      for (const [i, promptId] of job.promptIds.entries()) {
-        const items = await this.collect(job, promptId, signal)
-        await this.save(job, items[0]!, target, 'image', i, count, seeds[i])
-      }
+      for (const graph of graphs) await this.queue(job, graph)
+      await this.finish(job, spec, signal)
     }, info)
   }
 
   editImage(a: EditArgs): Job {
-    const engineId = 'qwen-image-2.1-edit'
-    const engine = ENGINES[engineId]!
+    const engineId = a.engine ?? 'qwen-image-2.1-edit'
+    const engine = ENGINES[engineId]
+    if (!engine || engine.kind !== 'image' || !engine.acceptsReferences) {
+      throw new Error(`engine must be one of ${enginesOfKind('image').filter((id) => ENGINES[id]!.acceptsReferences).join(', ')}`)
+    }
     const prompt = a.prompt.trim()
     if (!prompt) throw new Error('prompt is empty')
     if (a.images.length === 0 || a.images.length > 16) throw new Error('images must list 1 to 16 image paths')
@@ -253,9 +286,12 @@ export class ComfyService {
     const explicitSize = a.width !== undefined && a.height !== undefined
     if ((a.width === undefined) !== (a.height === undefined)) throw new Error('give both width and height, or neither (then the first image sets the size)')
     const seeds = this.seedsFor(a.seed, count)
+    const spec: SaveSpec = { target, prefix: 'edit', pick: 'first', prompts: count, total: count, seeds, saved: 0 }
     const info: Record<string, unknown> = { engine: engineId, ...(explicitSize ? { width: snap16(a.width!), height: snap16(a.height!) } : { size: 'from the first image' }) }
+    if (a.steps !== undefined && engine.defaults.sigmas !== undefined) info.note = `${engineId} uses its fixed ${engine.defaults.steps}-step schedule and ignores steps`
     return this.jobs.start('edit_image', `${engineId} from ${images.length} image(s): ${prompt.slice(0, 80)}`, async (job, signal) => {
       job.seeds = seeds
+      job.save = spec
       job.progress = 'upload'
       const references: string[] = []
       for (const file of images) references.push((await uploadFile(this.base, file)).filename)
@@ -272,12 +308,9 @@ export class ComfyService {
           autoLatent: !explicitSize,
           ...(explicitSize ? { width: snap16(a.width!), height: snap16(a.height!) } : {})
         } as never)
-        job.promptIds.push(await postPrompt(this.base, graph))
+        await this.queue(job, graph)
       }
-      for (const [i, promptId] of job.promptIds.entries()) {
-        const items = await this.collect(job, promptId, signal)
-        await this.save(job, items[0]!, target, 'edit', i, count, seeds[i])
-      }
+      await this.finish(job, spec, signal)
     }, info)
   }
 
@@ -290,11 +323,13 @@ export class ComfyService {
     if (listed.length === 0) throw new Error('no background-removal model in ComfyUI models/background_removal (e.g. birefnet.safetensors)')
     if (a.model && !listed.includes(a.model)) throw new Error(`model "${a.model}" is not installed; ComfyUI has: ${listed.join(', ')}`)
     const model = a.model ?? listed[0]!
+    const spec: SaveSpec = { target, prefix: 'cutout', pick: 'first', prompts: 1, total: 1, saved: 0 }
     return this.jobs.start('remove_background', `${model}: ${path.basename(image)}`, async (job, signal) => {
+      job.save = spec
       job.progress = 'upload'
       const uploaded = await uploadFile(this.base, image)
-      const items = await this.runGraph(job, buildRemoveBackground({ image: uploaded.filename, model, filenamePrefix: 'comfy-mcp/cutout' }), signal)
-      await this.save(job, items[0]!, target, 'cutout', 0, 1)
+      await this.queue(job, buildRemoveBackground({ image: uploaded.filename, model, filenamePrefix: 'comfy-mcp/cutout' }))
+      await this.finish(job, spec, signal)
     }, { model })
   }
 
@@ -324,13 +359,14 @@ export class ComfyService {
       seconds,
       format
     } as never)
+    const spec: SaveSpec = { target, prefix: 'music', pick: 'audio', prompts: 1, total: 1, seeds: [seed], saved: 0 }
     const info: Record<string, unknown> = { engine: engineId, seconds, format }
     if (engineId === 'yue2' || engineId === 'minimax-music-3') info.note = `${engineId} treats seconds as a maximum; the song may end earlier`
     return this.jobs.start('generate_music', `${engineId} ${seconds}s ${format}: ${tags.slice(0, 80)}`, async (job, signal) => {
       job.seeds = [seed]
-      const items = await this.runGraph(job, graph, signal)
-      const audio = items.find((i) => i.list === 'audio') ?? items[0]!
-      await this.save(job, audio, target, 'music', 0, 1, seed)
+      job.save = spec
+      await this.queue(job, graph)
+      await this.finish(job, spec, signal)
     }, info)
   }
 
@@ -344,13 +380,14 @@ export class ComfyService {
     if (!mapping?.text) throw new Error(`workflow ${wf.name} has no "text" in its .map.yaml, so it is not a speech workflow`)
     const graph = structuredClone(wf.graph)
     const language = a.language ?? 'en'
-    if (mapping.language) {
-      const value = mappedValue(mapping, 'language', language)
-      if (mapping.languages && !Object.values(mapping.languages).includes(String(value))) {
-        throw new Error(`language "${language}" is not supported by ${wf.name}; use one of ${Object.keys(mapping.languages).join(', ')}`)
-      }
-      setInput(graph, mapping.language, value)
+    if (mapping.languages && !Object.hasOwn(mapping.languages, language)) {
+      const hint = language === 'hr' && wf.name !== 'higgs-audio-v3' ? '; for Croatian use workflow higgs-audio-v3' : ''
+      throw new Error(`language "${language}" is not supported by ${wf.name}; use one of ${Object.keys(mapping.languages).join(', ')}${hint}`)
     }
+    if (mapping.language) setInput(graph, mapping.language, mappedValue(mapping, 'language', language))
+    const voiceText = a.voiceText?.trim()
+    if (voiceRef && mapping.needsVoiceText && !voiceText) throw new Error(`${wf.name} needs voice_text: the exact words spoken in voice_ref`)
+    if (voiceRef && voiceText && mapping.voiceText) setInput(graph, mapping.voiceText, voiceText)
     setInput(graph, mapping.text, text)
     const seed = a.seed ?? randomSeed()
     if (mapping.seed) setInput(graph, mapping.seed, seed)
@@ -363,22 +400,25 @@ export class ComfyService {
       const loader = graph[mapping.voiceRef.node]?.class_type ?? ''
       const choices = comboOptions((await this.objectInfo())[loader]?.input?.required?.[mapping.voiceRef.input])
       if (typeof current === 'string' && choices.includes(current)) {
-        voice = `workflow default (${current})`
+        voice = mapping.defaultVoice ? `default (${mapping.defaultVoice})` : `workflow default (${current})`
       } else {
         dropNode(graph, mapping.voiceRef.node)
-        info.note = 'no voice reference: the built-in voice can run on past the text; pass voice_ref for reliable length'
+        if (mapping.defaultVoice) voice = `default (${mapping.defaultVoice})`
+        else info.note = 'no voice reference: the built-in voice can run on past the text; pass voice_ref for reliable length'
       }
     }
     info.voice = voice
     tidyPrefixes(graph, 'speech')
+    const spec: SaveSpec = { target, prefix: 'speech', pick: 'audio', onlyNode: mapping.output.node, prompts: 1, total: 1, seeds: [seed], saved: 0 }
     return this.jobs.start('generate_speech', `${wf.name} ${language}: ${text.slice(0, 80)}`, async (job, signal) => {
       job.seeds = [seed]
+      job.save = spec
       if (voiceRef && mapping.voiceRef) {
         job.progress = 'upload'
         setInput(graph, mapping.voiceRef, (await uploadFile(this.base, voiceRef)).filename)
       }
-      const items = await this.runGraph(job, graph, signal, mapping.output.node)
-      await this.save(job, items.find((i) => i.list === 'audio') ?? items[0]!, target, 'speech', 0, 1, seed)
+      await this.queue(job, graph)
+      await this.finish(job, spec, signal)
     }, info)
   }
 
@@ -437,17 +477,18 @@ export class ComfyService {
     }
     tidyPrefixes(graph, wf.name.replace(/[^\w.-]+/g, '_'))
     const target = this.resolveOut(a.out)
+    const spec: SaveSpec = { target, prefix: wf.name.replace(/[^\w.-]+/g, '_').slice(0, 40), pick: 'all', ...(outputNode ? { onlyNode: outputNode } : {}), prompts: 1, saved: 0 }
     const info: Record<string, unknown> = { workflow: wf.name, format: wf.format, ...(Object.keys(randomized).length ? { randomized_seeds: randomized } : {}) }
     if (wf.warnings.length > 0) info.warnings = wf.warnings
     return this.jobs.start('run_workflow', `${wf.name}${a.params ? ` (${Object.keys(a.params).join(', ')})` : ''}`, async (job, signal) => {
       job.seeds = [...explicitSeeds, ...Object.values(randomized)]
+      job.save = spec
       for (const u of uploads) {
         job.progress = 'upload'
         setInput(graph, u.slot, (await uploadFile(this.base, u.file)).filename)
       }
-      const items = await this.runGraph(job, graph, signal, outputNode)
-      const prefix = wf.name.replace(/[^\w.-]+/g, '_').slice(0, 40)
-      for (const [i, item] of items.entries()) await this.save(job, item, target, prefix, i, items.length)
+      await this.queue(job, graph)
+      await this.finish(job, spec, signal)
     }, info)
   }
 

@@ -9,6 +9,7 @@
  *   image  qwen-image-2.1            Qwen-Image 2.1 text-to-image
  *   image  qwen-image-2.1-turbo      the same graph on the turbo UNet
  *   image  qwen-image-2.1-edit       Qwen-Image 2.1 image edit; reference images are spliced in by the text encoder
+ *   image  qwen-image-2.1-turbo-edit turbo UNet image edit (ManualSigmas + SamplerCustomAdvanced, 8 steps)
  *   image  z-image-turbo             Z-Image-Turbo
  *   image  krea2-turbo               Krea 2 Turbo
  *   audio  ace-step-v1               ACE-Step v1 song (tags + lyrics)
@@ -127,6 +128,9 @@ export interface BuildOpts {
   cfgScale?: number
 }
 
+/** The turbo edit template's 8-step sigma schedule. */
+const TURBO_EDIT_SIGMAS = '1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0'
+
 type Ref = [string, number]
 const ref = (id: number | string, slot = 0): Ref => [String(id), slot]
 
@@ -189,6 +193,51 @@ export function buildQwenImage(o: BuildOpts): Graph {
   }
   graph[8] = { class_type: 'VAEDecode', inputs: { samples: ref(7), vae: ref(4) } }
   graph[9] = { class_type: 'SaveImage', inputs: { images: ref(8), filename_prefix: o.filenamePrefix } }
+  return graph
+}
+
+/**
+ * Qwen-Image 2.1 Turbo image edit. The template samples with `ManualSigmas` + `SamplerCustomAdvanced` (no KSampler); the
+ * sigma list sets the step count. Deviation: the template's resolution 0 (no resize) is 1024 here, like the other edit
+ * engine, so a large input cannot produce a huge latent.
+ */
+export function buildQwenImageTurboEdit(o: BuildOpts & { sigmas?: string }): Graph {
+  const { files, seed, sampler } = o
+  const graph: Graph = {
+    1: { class_type: 'UNETLoader', inputs: { unet_name: files.turboUnet ?? files.unet, weight_dtype: 'default' } },
+    2: { class_type: 'QwenImage21Cache', inputs: { model: ref(1), device: 'auto', dtype: 'default' } },
+    3: { class_type: 'CLIPLoader', inputs: { clip_name: files.clip, type: 'qwen_image', device: 'default' } },
+    4: { class_type: 'VAELoader', inputs: { vae_name: files.vae } }
+  }
+  const encoderInputs: Record<string, unknown> = {
+    clip: ref(3),
+    vae: ref(4),
+    prompt: o.prompt ?? '',
+    negative_prompt: o.negativePrompt ?? '',
+    resolution: o.resolution ?? 1024
+  }
+  const references = o.references ?? []
+  references.forEach((filename, index) => {
+    const id = 20 + index
+    graph[id] = { class_type: 'LoadImage', inputs: { image: filename } }
+    encoderInputs[`images.image_${index + 1}`] = ref(id)
+  })
+  graph[5] = { class_type: 'TextEncodeQwenImage21', inputs: encoderInputs }
+  graph[6] = { class_type: 'ManualSigmas', inputs: { sigmas: o.sigmas ?? TURBO_EDIT_SIGMAS } }
+  graph[7] = { class_type: 'KSamplerSelect', inputs: { sampler_name: sampler ?? 'euler' } }
+  graph[8] = { class_type: 'RandomNoise', inputs: { noise_seed: seed } }
+  graph[9] = { class_type: 'CFGGuider', inputs: { model: ref(2), positive: ref(5), negative: ref(5, 1), cfg: o.cfg ?? 1 } }
+  let latent: Ref
+  if (o.autoLatent && references.length > 0) {
+    // The encoder derives a latent matching the reference image's own resolution.
+    latent = ref(5, 2)
+  } else {
+    graph[10] = { class_type: 'EmptyLatentImage', inputs: { width: o.width, height: o.height, batch_size: 1 } }
+    latent = ref(10)
+  }
+  graph[11] = { class_type: 'SamplerCustomAdvanced', inputs: { noise: ref(8), guider: ref(9), sampler: ref(7), sigmas: ref(6), latent_image: latent } }
+  graph[12] = { class_type: 'VAEDecode', inputs: { samples: ref(11), vae: ref(4) } }
+  graph[13] = { class_type: 'SaveImage', inputs: { images: ref(12), filename_prefix: o.filenamePrefix } }
   return graph
 }
 
@@ -372,6 +421,11 @@ export const ENGINES: Record<string, EngineDef> = {
     kind: 'image', label: 'Qwen-Image 2.1 (image edit)', fileGroup: 'qwen', requires: QWEN_REQ, acceptsReferences: true, size: QWEN_SIZE, usesNegative: true,
     build: (o) => buildQwenImage({ ...o, peClipType: 'qwen_image', files: { ...o.files, peClip: o.files.peClipI2i ?? '' } }),
     defaults: { steps: 25, cfg: 1, sampler: 'euler', scheduler: 'simple', denoise: 1, resolution: 1024 }
+  },
+  'qwen-image-2.1-turbo-edit': {
+    kind: 'image', label: 'Qwen-Image 2.1 Turbo (image edit)', fileGroup: 'qwen', requires: [['turboUnet', 'diffusion_models'], ['clip', 'text_encoders'], ['vae', 'vae']], acceptsReferences: true, size: QWEN_SIZE,
+    build: buildQwenImageTurboEdit,
+    defaults: { steps: 8, cfg: 1, sampler: 'euler', scheduler: 'simple', resolution: 1024, sigmas: TURBO_EDIT_SIGMAS }
   },
   'z-image-turbo': {
     kind: 'image', label: 'Z-Image Turbo (text to image)', fileGroup: 'zImage', requires: [['unet', 'diffusion_models'], ['clip', 'text_encoders'], ['vae', 'vae']], size: SQUARE_1K,

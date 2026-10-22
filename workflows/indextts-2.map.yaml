@@ -1,0 +1,16 @@
+# Mapping for indextts-2.json (TTS Audio Suite: IndexTTSEngineNode -> Unified TTS Text -> SaveAudioMP3).
+kind: audio
+text: { node: "4", input: text }
+seed: { node: "4", input: seed }
+# The voice reference clip: uploaded to ComfyUI's input folder and set on the LoadAudio node. Without voice_ref the node is dropped
+# and the Character Voices library voice below is used.
+voiceRef: { node: "2", input: audio }
+# The exact words spoken in the voice reference clip.
+voiceText: { node: "3", input: reference_text }
+output: "5"
+defaultVoice: voices_examples/female/female_01.wav
+# Uses model_path "IndexTTS-2" (not "local:IndexTTS-2"): the node downloads missing model files on the first run (~10 min here).
+# IndexTTS-2 speaks English and Chinese; there is no language input, the codes only validate.
+languages:
+  en: English
+  zh: Chinese

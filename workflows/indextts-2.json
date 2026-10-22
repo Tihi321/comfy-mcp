@@ -1,0 +1,91 @@
+{
+  "1": {
+    "class_type": "IndexTTSEngineNode",
+    "inputs": {
+      "model_path": "IndexTTS-2",
+      "device": "auto",
+      "emotion_alpha": 1,
+      "use_random": false,
+      "max_text_tokens_per_segment": 120,
+      "interval_silence": 200,
+      "temperature": 0.8,
+      "top_p": 0.8,
+      "top_k": 30,
+      "do_sample": true,
+      "length_penalty": 0,
+      "num_beams": 3,
+      "repetition_penalty": 10,
+      "max_mel_tokens": 1500,
+      "use_fp16": true,
+      "use_deepspeed": false
+    },
+    "_meta": {
+      "title": "IndexTTSEngineNode"
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "comfy-mcp/voice_ref.wav"
+    },
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "3": {
+    "class_type": "CharacterVoicesNode",
+    "inputs": {
+      "voice_name": "voices_examples/female/female_01.wav",
+      "reference_text": "",
+      "trim_start": 0,
+      "trim_end": 0,
+      "customized": false,
+      "opt_audio_input": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "CharacterVoicesNode"
+    }
+  },
+  "4": {
+    "class_type": "UnifiedTTSTextNode",
+    "inputs": {
+      "TTS_engine": [
+        "1",
+        0
+      ],
+      "text": "Hello, this is a test.",
+      "narrator_voice": "none",
+      "seed": 1,
+      "opt_narrator": [
+        "3",
+        0
+      ],
+      "enable_chunking": true,
+      "max_chars_per_chunk": 400,
+      "chunk_combination_method": "auto",
+      "silence_between_chunks_ms": 100,
+      "enable_audio_cache": true,
+      "batch_size": 0
+    },
+    "_meta": {
+      "title": "UnifiedTTSTextNode"
+    }
+  },
+  "5": {
+    "class_type": "SaveAudioMP3",
+    "inputs": {
+      "filename_prefix": "comfy-mcp/speech",
+      "quality": "V0",
+      "audio": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "SaveAudioMP3"
+    }
+  }
+}

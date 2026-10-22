@@ -40,6 +40,7 @@ const seed = z.number().int().min(0).optional().describe('Fixed seed for reprodu
 const absPath = (what: string) => z.string().describe(`Absolute path of ${what}`)
 
 const imageEngines = enginesOfKind('image').filter((id) => !ENGINES[id]!.acceptsReferences) as [string, ...string[]]
+const editEngines = enginesOfKind('image').filter((id) => ENGINES[id]!.acceptsReferences) as [string, ...string[]]
 const audioEngines = enginesOfKind('audio') as [string, ...string[]]
 
 export function buildTools(svc: ComfyService): Tool[] {
@@ -80,9 +81,10 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'edit_image',
-      'Edit images with Qwen-Image 2.1 edit: pass 1-16 absolute image paths and an instruction ("give her a red coat, keep the face and pose"). The images are uploaded to ComfyUI and spliced into the model input, so the subject is kept. Without width/height the output matches the first image. Returns the PNG paths.',
+      'Edit images with Qwen-Image 2.1. Engines: qwen-image-2.1-edit (default, 25 steps) or qwen-image-2.1-turbo-edit (8 steps, much faster, ignores steps). Pass 1-16 absolute image paths and an instruction ("give her a red coat, keep the face and pose"). The images are uploaded to ComfyUI and spliced into the model input, so the subject is kept. Without width/height the output matches the first image. Returns the PNG paths.',
       z.object({
         prompt: z.string().describe('The edit instruction'),
+        engine: z.enum(editEngines).optional(),
         image: z.string().optional().describe('Absolute path of the image to edit (or use images)'),
         images: z.array(z.string()).optional().describe('Absolute paths of the reference images, in order'),
         negative: z.string().optional(),
@@ -90,7 +92,7 @@ export function buildTools(svc: ComfyService): Tool[] {
         height: z.number().int().min(64).max(4096).optional(),
         seed,
         count: z.number().int().min(1).max(8).optional(),
-        steps: z.number().int().min(1).max(150).optional().describe('Sampler steps (default 25)'),
+        steps: z.number().int().min(1).max(150).optional().describe('Sampler steps (default 25; ignored by the turbo edit engine, which always runs 8)'),
         out,
         wait
       }),
@@ -123,21 +125,22 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'generate_speech',
-      'Text to speech through a saved ComfyUI TTS workflow (default chatterbox-multilingual: 23 languages, not Croatian). Pass voice_ref (an absolute path to a short clean audio clip, 5-15 s) to clone a voice; without it the workflow\'s own reference clip is used when ComfyUI has it, else the built-in voice (which can run on past the text). Returns the audio path.',
+      'Text to speech through a saved ComfyUI TTS workflow (workflow, default chatterbox-multilingual). Workflows: chatterbox-multilingual (23 languages, not Croatian); f5-tts (English; cloning needs voice_text); indextts-2 (en, zh); qwen3-tts (en, zh, ja, ko, de, fr, ru, pt, es, it); higgs-audio-v3 (100+ languages including Croatian, hr; research licence, the first run downloads ~8 GB). Pass voice_ref (an absolute path to a short clean audio clip, 5-15 s) to clone a voice, plus voice_text (the exact words spoken in it) where required. Without voice_ref the workflow uses its default voice (chatterbox: its own reference clip when ComfyUI has it, else the built-in voice, which can run on past the text). Returns the audio path.',
       z.object({
         text: z.string().describe('What to say'),
-        language: z.string().optional().describe('Language code: en (default), de, fr, es, it, ja, zh, ... (see the workflow mapping)'),
+        language: z.string().optional().describe('Language code: en (default), de, fr, es, it, ja, zh, hr (higgs-audio-v3 only), ... (see the workflow mapping)'),
         voice_ref: z.string().optional().describe('Absolute path of a voice reference clip (wav/mp3/flac)'),
+        voice_text: z.string().optional().describe('The exact words spoken in voice_ref; required by f5-tts, optional for higgs-audio-v3'),
         seed,
-        workflow: z.string().optional().describe('A mapped TTS workflow (needs a .map.yaml with text); default chatterbox-multilingual'),
+        workflow: z.string().optional().describe('A mapped TTS workflow: chatterbox-multilingual (default), f5-tts, indextts-2, qwen3-tts, higgs-audio-v3, or your own (needs a .map.yaml with text)'),
         out,
         wait
       }),
-      async (a) => settle(await svc.generateSpeech({ ...a, voiceRef: a.voice_ref }), a.wait)
+      async (a) => settle(await svc.generateSpeech({ ...a, voiceRef: a.voice_ref, voiceText: a.voice_text }), a.wait)
     ),
     def(
       'list_workflows',
-      'List saved workflows: this server\'s workflows folder, extra folders, and ComfyUI\'s own saved workflows. Shows the format (api or ui), whether a .map.yaml names its inputs, and why one cannot run (UI workflows that use subgraphs need Export (API) first).',
+      'List saved workflows: this server\'s workflows folder, extra folders, and ComfyUI\'s own saved workflows. Shows the format (api or ui), whether a .map.yaml names its inputs, and why one cannot run (not valid JSON, not a ComfyUI workflow). UI workflows that use subgraphs (most ComfyUI templates) run as they are.',
       z.object({}),
       async () => ({ workflows: await svc.listWorkflows() })
     ),
@@ -149,7 +152,7 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'run_workflow',
-      'Run a saved workflow (API format, or a UI workflow without subgraphs) with a parameter map. params: {"<node id or title>.<input>": value} for literal inputs, or mapped names (prompt, negative, width, height, seed, steps, text, language) when the workflow has a .map.yaml. files: {"<node>.<input>": "<absolute path>"} uploads a file into ComfyUI\'s input folder and sets the input (or mapped reference / voiceRef). Seeds not set in params are randomized unless randomize_seeds is false. Every file the output nodes save is downloaded; returns the paths.',
+      'Run a saved workflow (API format, or a UI-format workflow, including ones that use subgraphs; their inner nodes get ids like "57:27") with a parameter map. params: {"<node id or title>.<input>": value} for literal inputs, or mapped names (prompt, negative, width, height, seed, steps, text, language) when the workflow has a .map.yaml. files: {"<node>.<input>": "<absolute path>"} uploads a file into ComfyUI\'s input folder and sets the input (or mapped reference / voiceRef). Seeds not set in params are randomized unless randomize_seeds is false. Every file the output nodes save is downloaded; returns the paths.',
       z.object({
         workflow: z.string().describe('A name from list_workflows or an absolute path to a .json'),
         params: z.record(z.string(), z.unknown()).optional(),
@@ -171,7 +174,7 @@ export function buildTools(svc: ComfyService): Tool[] {
       async (a) => {
         const ids = a.job_ids === undefined ? svc.jobs.active().map((j) => j.id) : Array.isArray(a.job_ids) ? a.job_ids : [a.job_ids]
         const unknown = ids.filter((id) => !svc.jobs.get(id))
-        if (unknown.length > 0) throw new Error(`unknown job id(s): ${unknown.join(', ')} (jobs are forgotten when the server restarts)`)
+        if (unknown.length > 0) throw new Error(`unknown job id(s): ${unknown.join(', ')} (only the last 200 finished jobs are kept)`)
         const finished = await svc.jobs.wait(ids, (a.timeout_seconds ?? 120) * 1000)
         return { all_finished: finished, jobs: ids.map((id) => jobView(svc.jobs.get(id)!)) }
       }

@@ -1,7 +1,8 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { uiToApi } from '../src/comfy/ui-to-api'
 import { buildRemoveBackground, ENGINES, mergeFiles } from '../src/comfy/graphs'
 import { dropNode, listWorkflows, loadWorkflow, mappedValue, randomizeSeeds, resolveSlot, resolveWorkflowFile, setInput, splitKey } from '../src/comfy/workflows'
 
@@ -30,6 +31,30 @@ describe('saved workflows', () => {
     expect(wf.format).toBe('api')
     expect(wf.mapping?.text).toEqual({ node: '1', input: 'text' })
     expect(mappedValue(wf.mapping, 'language', 'de')).toBe('German (de)')
+  })
+
+  const bundled = readdirSync(repoWorkflows).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''))
+  it.each(bundled)('bundled workflow %s loads with a validating speech mapping', async (name) => {
+    const wf = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], name), noSchemas)
+    expect(wf.format).toBe('api')
+    expect(wf.mapping?.kind).toBe('audio')
+    expect(wf.mapping?.text).toBeDefined()
+    expect(wf.mapping?.voiceRef).toBeDefined()
+  })
+
+  it('resolves voiceText and the speech engine mappings', async () => {
+    const f5 = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'f5-tts'), noSchemas)
+    expect(resolveSlot(f5.graph, f5.mapping, 'voiceText')).toMatchObject({ node: '3', input: 'reference_text', field: 'voiceText' })
+    expect(f5.mapping?.needsVoiceText).toBe(true)
+    const higgs = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'higgs-audio-v3'), noSchemas)
+    expect(higgs.mapping?.language).toBeUndefined()
+    expect(higgs.mapping?.languages).toBeUndefined()
+    expect(higgs.mapping?.needsVoiceText).toBe(false)
+    const qwen = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'qwen3-tts'), noSchemas)
+    expect(mappedValue(qwen.mapping, 'language', 'de')).toBe('German')
+    const index = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'indextts-2'), noSchemas)
+    expect(index.mapping?.language).toBeUndefined()
+    expect(Object.keys(index.mapping?.languages ?? {})).toEqual(['en', 'zh'])
   })
 
   it('resolves mapped names, node ids and titles', async () => {
@@ -61,13 +86,73 @@ describe('saved workflows', () => {
     expect(g[2].inputs.noise_seed).toBe(7)
   })
 
-  it('flags UI workflows that use subgraphs', async () => {
+  it('lists UI workflows with subgraphs without a problem', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'cmcp-'))
-    writeFileSync(path.join(dir, 'sub.json'), JSON.stringify({ nodes: [{ id: 1, type: 'abc-123' }], links: [], definitions: { subgraphs: [{ id: 'abc-123', name: 'Inner' }] } }))
+    writeFileSync(path.join(dir, 'sub.json'), JSON.stringify({ nodes: [{ id: 1, type: 'abc-123' }], links: [], definitions: { subgraphs: [{ id: 'abc-123', name: 'Inner', nodes: [] }] } }))
     writeFileSync(path.join(dir, 'flat.json'), JSON.stringify({ nodes: [{ id: 1, type: 'SaveImage', inputs: [] }], links: [] }))
     const list = await listWorkflows([dir])
-    expect(list.find((w) => w.name === 'sub')?.problem).toMatch(/subgraphs/)
+    expect(list.find((w) => w.name === 'sub')).toMatchObject({ format: 'ui' })
+    expect(list.find((w) => w.name === 'sub')?.problem).toBeUndefined()
     expect(list.find((w) => w.name === 'flat')).toMatchObject({ format: 'ui', mapped: false })
-    expect(list.find((w) => w.name === 'flat')?.problem).toBeUndefined()
+  })
+})
+
+describe('subgraph conversion', () => {
+  const schemas = {
+    LoadImage: { input: { required: { image: [['a.png']] } } },
+    Gen: { input: { required: { image: ['IMAGE'], text: ['STRING'], steps: ['INT'] } } },
+    Post: { input: { required: { image: ['IMAGE'], strength: ['FLOAT'] } } },
+    SaveImage: { input: { required: { images: ['IMAGE'], filename_prefix: ['STRING'] } } }
+  }
+  const link = (id: number, o: number, os: number, t: number, ts: number) => ({ id, origin_id: o, origin_slot: os, target_id: t, target_slot: ts, type: '*' })
+  const workflow = {
+    nodes: [
+      { id: 1, type: 'LoadImage', widgets_values: ['in.png', 'image'], inputs: [] },
+      { id: 2, type: 'save-sub', mode: 0, inputs: [{ name: 'image', link: 10 }], widgets_values: [] },
+      { id: 3, type: 'gen-sub', inputs: [{ name: 'image', link: 1 }, { name: 'text', widget: { name: 'text' } }, { name: 'steps', widget: { name: 'steps' } }], widgets_values: ['a cat', 7] },
+      { id: 4, type: 'gen-sub', mode: 2, inputs: [], widgets_values: [] },
+      { id: 5, type: 'SaveImage', widgets_values: ['out'], inputs: [{ name: 'images', link: 2 }] }
+    ],
+    links: [[1, 1, 0, 3, 0, 'IMAGE'], [2, 3, 0, 5, 0, 'IMAGE'], [10, 4, 0, 2, 0, 'IMAGE']],
+    definitions: {
+      subgraphs: [
+        {
+          id: 'gen-sub',
+          name: 'Gen',
+          inputs: [{ name: 'image' }, { name: 'text' }, { name: 'steps' }],
+          nodes: [
+            { id: 30, type: 'Gen', widgets_values: ['own', 1], inputs: [{ name: 'image', link: 1 }, { name: 'text', link: 2 }, { name: 'steps', link: 3 }] },
+            { id: 31, type: 'inner-post', inputs: [{ name: 'image', link: 4 }], widgets_values: [] }
+          ],
+          links: [link(1, -10, 0, 30, 0), link(2, -10, 1, 30, 1), link(3, -10, 2, 30, 2), link(4, 30, 0, 31, 0), link(5, 31, 0, -20, 0)]
+        },
+        {
+          id: 'inner-post',
+          name: 'Post',
+          inputs: [{ name: 'image' }],
+          nodes: [{ id: 12, type: 'Post', widgets_values: [0.5], inputs: [{ name: 'image', link: 1 }] }],
+          links: [link(1, -10, 0, 12, 0), link(2, 12, 0, -20, 0)]
+        },
+        { id: 'save-sub', name: 'S', inputs: [{ name: 'image' }], nodes: [], links: [link(1, -10, 0, -20, 0)] }
+      ]
+    }
+  }
+
+  it('expands instances with literals, links, nesting and muted instances', () => {
+    const { prompt, warnings } = uiToApi(workflow, schemas)
+    expect(warnings).toEqual([])
+    expect(Object.keys(prompt).sort()).toEqual(['1', '3:30', '3:31:12', '5'])
+    expect(prompt['3:30']!.inputs).toEqual({ image: ['1', 0], text: 'a cat', steps: 7 })
+    expect(prompt['3:31:12']!.inputs).toEqual({ image: ['3:30', 0], strength: 0.5 })
+    expect(prompt['5']!.inputs).toMatchObject({ images: ['3:31:12', 0], filename_prefix: 'out' })
+  })
+
+  it('warns about a bypassed instance and unlinks what it fed', () => {
+    const wf = structuredClone(workflow)
+    wf.nodes[2]!.mode = 4
+    const { prompt, warnings } = uiToApi(wf, schemas)
+    expect(warnings[0]).toMatch(/bypassed subgraph Gen/)
+    expect(prompt['5']!.inputs.images).toBeUndefined()
+    expect(prompt['3:30']).toBeUndefined()
   })
 })

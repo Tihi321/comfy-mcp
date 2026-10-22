@@ -9,6 +9,7 @@ import type { FileGroups } from './comfy/graphs'
  *   --port <n>            COMFY_MCP_PORT        MCP port on 127.0.0.1 (7460)
  *   --comfy <url>         COMFY_URL             the ComfyUI server (http://127.0.0.1:8188)
  *   --out <dir>           COMFY_MCP_OUT         default output folder (~/ComfyMCP/output)
+ *   --state <file>        COMFY_MCP_STATE       where jobs are saved across restarts (~/ComfyMCP/jobs.json)
  *   --workflows <dirs>    COMFY_MCP_WORKFLOWS   extra workflow folders, separated by ";"
  *   --files <json>        COMFY_MCP_FILES       model file overrides, e.g. {"zImage":{"unet":"x.safetensors"}}
  *                         COMFY_MCP_TOKEN       Bearer token; unset means no auth
@@ -19,6 +20,8 @@ export interface Config {
   port: number
   comfyUrl: string
   outDir: string
+  /** JSON file the jobs are saved to, so they survive a restart. */
+  stateFile: string
   /** Searched in order for saved workflows: the repo's `workflows/`, the extra folders, ComfyUI's user workflows. */
   workflowDirs: string[]
   files: Partial<Record<keyof FileGroups, Record<string, string>>>
@@ -59,6 +62,7 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env,
 
   const comfyUrl = (flag(argv, '--comfy') ?? env.COMFY_URL ?? DEFAULT_COMFY_URL).trim().replace(/\/+$/, '')
   const outDir = path.resolve(expandHome(flag(argv, '--out') ?? env.COMFY_MCP_OUT ?? path.join(homedir(), 'ComfyMCP', 'output')))
+  const stateFile = path.resolve(expandHome(flag(argv, '--state') ?? env.COMFY_MCP_STATE ?? path.join(homedir(), 'ComfyMCP', 'jobs.json')))
 
   const extra = (flag(argv, '--workflows') ?? env.COMFY_MCP_WORKFLOWS ?? '')
     .split(';')
@@ -81,5 +85,5 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env,
   const jobTimeoutS = Number(timeoutText)
   if (!Number.isFinite(jobTimeoutS) || jobTimeoutS <= 0) throw new Error(`--job-timeout must be seconds, not "${timeoutText}"`)
 
-  return { port, comfyUrl, outDir, workflowDirs, files, token: env.COMFY_MCP_TOKEN?.trim() || null, jobTimeoutMs: jobTimeoutS * 1000 }
+  return { port, comfyUrl, outDir, stateFile, workflowDirs, files, token: env.COMFY_MCP_TOKEN?.trim() || null, jobTimeoutMs: jobTimeoutS * 1000 }
 }
