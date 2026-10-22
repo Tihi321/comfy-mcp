@@ -56,7 +56,7 @@ export interface WorkflowEntry {
   file: string
   format: 'api' | 'ui' | 'unknown'
   mapped: boolean
-  /** Why it cannot run as is (subgraphs, not a workflow). */
+  /** Why it cannot run as is (not a workflow). */
   problem?: string
 }
 
@@ -66,24 +66,13 @@ function isGraph(value: unknown): value is Graph {
   return entries.length > 0 && entries.every((n) => !!n && typeof n === 'object' && typeof (n as { class_type?: unknown }).class_type === 'string')
 }
 
-function isUi(value: unknown): value is UiWorkflow & { definitions?: { subgraphs?: Array<{ id: string; name?: string }> } } {
+function isUi(value: unknown): value is UiWorkflow {
   return !!value && typeof value === 'object' && Array.isArray((value as { nodes?: unknown }).nodes)
-}
-
-/** Node types of a UI workflow that are subgraph instances (their type is a subgraph id). */
-function subgraphNodes(ui: UiWorkflow & { definitions?: { subgraphs?: Array<{ id: string; name?: string }> } }): string[] {
-  const ids = new Map((ui.definitions?.subgraphs ?? []).map((s) => [s.id, s.name ?? s.id]))
-  return ui.nodes.filter((n) => ids.has(n.type)).map((n) => `${n.id} (${ids.get(n.type)})`)
 }
 
 function classify(raw: unknown): { format: WorkflowEntry['format']; problem?: string } {
   if (isGraph(raw)) return { format: 'api' }
-  if (isUi(raw)) {
-    const subs = subgraphNodes(raw)
-    return subs.length > 0
-      ? { format: 'ui', problem: `uses subgraphs (${subs.join(', ')}); open it in ComfyUI and use Export (API), then run the exported file` }
-      : { format: 'ui' }
-  }
+  if (isUi(raw)) return { format: 'ui' }
   return { format: 'unknown', problem: 'not a ComfyUI workflow' }
 }
 

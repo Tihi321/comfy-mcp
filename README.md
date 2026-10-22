@@ -25,7 +25,7 @@ It is plain Node 24 (no Electron). It serves Streamable HTTP on `127.0.0.1:7460/
 
 **Outputs.** `out` is an absolute folder (file names are generated: `<kind>_<date>-<time>_<seed>.<ext>`) or an absolute file path. With several files, a file path gets `_1`, `_2`. The extension is whatever ComfyUI produced. `generate_music` takes its format from the `out` extension when `format` is not given. Without `out`, files go to the default folder (`--out`). ComfyUI keeps its own copy under `output/comfy-mcp/`.
 
-**Workflows.** A workflow is either an API-format JSON (ComfyUI: Workflow → Export (API)), or a UI-format JSON without subgraphs; the server converts UI workflows using the live `/object_info`. An optional `<name>.map.yaml` next to it names the inputs for `prompt, negative, width, height, seed, steps, reference, text, language, voiceRef` and the `output` node (the same format as VN Studio's `custom:<name>` engines). `generate_speech` needs a mapping with `text`. ComfyUI's template workflows mostly use subgraphs; export those as API first.
+**Workflows.** A workflow is either an API-format JSON (ComfyUI: Workflow → Export (API)), or a UI-format JSON as the editor saves it; the server converts UI workflows using the live `/object_info`. Subgraphs (most of ComfyUI's templates use them) are expanded: an inner node gets the id `<instance>:<inner>`, e.g. `57:27`, and the instance's widget values become that node's inputs. A muted or bypassed subgraph is left out. An optional `<name>.map.yaml` next to it names the inputs for `prompt, negative, width, height, seed, steps, reference, text, language, voiceRef` and the `output` node (the same format as VN Studio's `custom:<name>` engines). `generate_speech` needs a mapping with `text`.
 
 ## Run
 

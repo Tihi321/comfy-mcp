@@ -12,13 +12,28 @@ interface UiNode {
   type: string
   title?: string
   mode?: number
-  inputs?: Array<{ name: string; link?: number | null }>
+  inputs?: Array<{ name: string; link?: number | null; widget?: unknown }>
   widgets_values?: unknown[]
   widgets_values_named?: Record<string, unknown>
 }
+interface UiLink {
+  id: number
+  origin_id: number | string
+  origin_slot: number
+  target_id?: number | string
+  target_slot?: number
+}
+interface UiSubgraph {
+  id: string
+  name?: string
+  inputs?: Array<{ name: string }>
+  nodes: UiNode[]
+  links?: Array<unknown[] | UiLink>
+}
 export interface UiWorkflow {
   nodes: UiNode[]
-  links?: Array<unknown[] | { id: number; origin_id: number | string; origin_slot: number }>
+  links?: Array<unknown[] | UiLink>
+  definitions?: { subgraphs?: UiSubgraph[] }
 }
 
 type InputSpec = unknown[]
@@ -66,7 +81,108 @@ export interface ConvertResult {
   warnings: string[]
 }
 
-export function uiToApi(ui: UiWorkflow, schemas: SchemaMap = {}): ConvertResult {
+const INPUT_ID = -10
+const OUTPUT_ID = -20
+const MAX_DEPTH = 16
+
+function linkMap(raw: Array<unknown[] | UiLink> | undefined): Map<number, UiLink> {
+  const out = new Map<number, UiLink>()
+  for (const l of raw ?? []) {
+    if (Array.isArray(l)) out.set(Number(l[0]), { id: Number(l[0]), origin_id: l[1] as number, origin_slot: Number(l[2]), target_id: l[3] as number, target_slot: Number(l[4]) })
+    else if (l && typeof l === 'object') out.set(l.id, l)
+  }
+  return out
+}
+
+/**
+ * Expands subgraph instances into one flat UI workflow. Inner node `30` of instance `57` becomes `57:30` (nested: `57:12:30`).
+ * Instance widget values become synthetic PrimitiveNodes (inlined as literals later), outer links are spliced through the
+ * subgraph's input/output slots, muted/bypassed instances are dropped.
+ */
+export function flattenSubgraphs(ui: UiWorkflow): { workflow: UiWorkflow; warnings: string[] } {
+  const defs = new Map((ui.definitions?.subgraphs ?? []).map((s) => [s.id, s]))
+  const nodes: UiNode[] = []
+  const links: UiLink[] = []
+  const warnings: string[] = []
+  let nextLink = 1
+  type Origin = { id: number | string; slot: number }
+  type Resolver = (slot: number) => Origin | undefined
+
+  const level = (src: UiNode[], rawLinks: Array<unknown[] | UiLink> | undefined, prefix: string, input: Resolver, depth: number) => {
+    if (depth > MAX_DEPTH) throw new Error('subgraphs nested too deep (cycle?)')
+    const lm = linkMap(rawLinks)
+    const byId = new Map(src.map((n) => [n.id, n]))
+    const fid = (id: number | string) => (prefix ? `${prefix}${id}` : id)
+    const children = new Map<number | string, { emit: () => void; output: Resolver }>()
+
+    const resolve = (l: UiLink | undefined): Origin | undefined => {
+      if (!l) return undefined
+      if (l.origin_id === INPUT_ID) return input(l.origin_slot)
+      const node = byId.get(l.origin_id)
+      if (!node) return undefined
+      if (defs.has(node.type)) return children.get(node.id)?.output(l.origin_slot)
+      return { id: fid(node.id), slot: l.origin_slot }
+    }
+
+    for (const inst of src) {
+      const sub = defs.get(inst.type)
+      if (!sub) continue
+      if (inst.mode === 2 || inst.mode === 4) {
+        if (inst.mode === 4) warnings.push(`bypassed subgraph ${sub.name ?? sub.id} (id ${fid(inst.id)}) dropped; bypass pass-through is not supported`)
+        continue
+      }
+      const widgetInputs = (inst.inputs ?? []).filter((i) => i.widget !== undefined)
+      const synthetic = new Map<number, Origin>()
+      const innerInput: Resolver = (k) => {
+        const name = sub.inputs?.[k]?.name
+        const inp = (inst.inputs ?? []).find((i) => i.name === name)
+        if (!inp) return undefined
+        if (inp.link !== null && inp.link !== undefined) return resolve(lm.get(inp.link))
+        const at = widgetInputs.indexOf(inp)
+        const value = at >= 0 ? (inst.widgets_values ?? [])[at] : undefined
+        if (value === undefined) return undefined
+        if (!synthetic.has(k)) {
+          const id = `${fid(inst.id)}:in:${k}`
+          nodes.push({ id, type: 'PrimitiveNode', widgets_values: [value] })
+          synthetic.set(k, { id, slot: 0 })
+        }
+        return synthetic.get(k)
+      }
+      children.set(inst.id, level(sub.nodes, sub.links, `${fid(inst.id)}:`, innerInput, depth + 1))
+    }
+
+    return {
+      emit() {
+        for (const node of src) {
+          if (defs.has(node.type)) {
+            children.get(node.id)?.emit()
+            continue
+          }
+          const inputs = node.inputs?.map((i) => {
+            const origin = i.link === null || i.link === undefined ? undefined : resolve(lm.get(i.link))
+            if (!origin) return { ...i, link: null }
+            const id = nextLink++
+            links.push({ id, origin_id: origin.id, origin_slot: origin.slot })
+            return { ...i, link: id }
+          })
+          nodes.push({ ...node, id: fid(node.id), ...(inputs ? { inputs } : {}) })
+        }
+      },
+      /** Where the subgraph's output slot `slot` comes from (inside this level). */
+      output(slot: number): Origin | undefined {
+        for (const l of lm.values()) if (l.target_id === OUTPUT_ID && l.target_slot === slot) return resolve(l)
+        return undefined
+      }
+    }
+  }
+
+  level(ui.nodes, ui.links, '', () => undefined, 0).emit()
+  return { workflow: { nodes, links }, warnings }
+}
+
+export function uiToApi(source: UiWorkflow, schemas: SchemaMap = {}): ConvertResult {
+  const flat = source.definitions?.subgraphs?.length ? flattenSubgraphs(source) : undefined
+  const ui = flat?.workflow ?? source
   const nodes = new Map(ui.nodes.map((n) => [n.id, n]))
   const linkById = new Map<number, { node: number | string; slot: number }>()
   for (const link of ui.links ?? []) {
@@ -75,7 +191,7 @@ export function uiToApi(ui: UiWorkflow, schemas: SchemaMap = {}): ConvertResult 
   }
 
   const active = (n: UiNode) => n.mode !== 2 && n.mode !== 4
-  const isNote = (n: UiNode) => /Note$/i.test(n.type)
+  const isNote = (n: UiNode) => /Note$/i.test(n.type) || n.type === 'Label (rgthree)'
 
   type Source = { literal: unknown } | { node: string } | undefined
   const resolveSource = (nodeId: number | string, depth = 0): Source => {
@@ -94,7 +210,7 @@ export function uiToApi(ui: UiWorkflow, schemas: SchemaMap = {}): ConvertResult 
 
   const prompt: Graph = {}
   const skipped: string[] = []
-  const warnings: string[] = []
+  const warnings: string[] = [...(flat?.warnings ?? [])]
   for (const node of ui.nodes) {
     if (isNote(node) || !active(node) || node.type === 'Reroute' || node.type === 'PrimitiveNode') {
       skipped.push(`${node.id}:${node.type}`)

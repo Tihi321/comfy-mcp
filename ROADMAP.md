@@ -8,7 +8,8 @@ What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\
 
 ## Workflows
 
-- **Subgraph workflows.** Most of ComfyUI's saved template workflows (Qwen-Image 2.1, Z-Image, Krea 2, BiRefNet, MiniMax, YuE2) put their nodes in a subgraph; `run_workflow` refuses them with a hint to use Export (API). Expanding subgraphs in the UI-to-API converter would make every saved workflow runnable.
+- [x] **Subgraph workflows.** Most of ComfyUI's saved template workflows (Qwen-Image 2.1, Z-Image, Krea 2, BiRefNet, MiniMax, YuE2) put their nodes in a subgraph; `run_workflow` refuses them with a hint to use Export (API). Expanding subgraphs in the UI-to-API converter would make every saved workflow runnable.
+  Done in CMC-03: the converter expands subgraphs (nested too). All 13 local templates convert, and Z-Image and BiRefNet ran end to end. Still open: a bypassed subgraph is dropped, not passed through.
 - **Qwen-Image 2.1 Turbo edit.** Not an engine: its template uses ManualSigmas + SamplerCustomAdvanced instead of KSampler, so it needs its own graph.
 
 ## Speech

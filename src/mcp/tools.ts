@@ -137,7 +137,7 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'list_workflows',
-      'List saved workflows: this server\'s workflows folder, extra folders, and ComfyUI\'s own saved workflows. Shows the format (api or ui), whether a .map.yaml names its inputs, and why one cannot run (UI workflows that use subgraphs need Export (API) first).',
+      'List saved workflows: this server\'s workflows folder, extra folders, and ComfyUI\'s own saved workflows. Shows the format (api or ui), whether a .map.yaml names its inputs, and why one cannot run (not valid JSON, not a ComfyUI workflow). UI workflows that use subgraphs (most ComfyUI templates) run as they are.',
       z.object({}),
       async () => ({ workflows: await svc.listWorkflows() })
     ),
@@ -149,7 +149,7 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'run_workflow',
-      'Run a saved workflow (API format, or a UI workflow without subgraphs) with a parameter map. params: {"<node id or title>.<input>": value} for literal inputs, or mapped names (prompt, negative, width, height, seed, steps, text, language) when the workflow has a .map.yaml. files: {"<node>.<input>": "<absolute path>"} uploads a file into ComfyUI\'s input folder and sets the input (or mapped reference / voiceRef). Seeds not set in params are randomized unless randomize_seeds is false. Every file the output nodes save is downloaded; returns the paths.',
+      'Run a saved workflow (API format, or a UI-format workflow, including ones that use subgraphs; their inner nodes get ids like "57:27") with a parameter map. params: {"<node id or title>.<input>": value} for literal inputs, or mapped names (prompt, negative, width, height, seed, steps, text, language) when the workflow has a .map.yaml. files: {"<node>.<input>": "<absolute path>"} uploads a file into ComfyUI\'s input folder and sets the input (or mapped reference / voiceRef). Seeds not set in params are randomized unless randomize_seeds is false. Every file the output nodes save is downloaded; returns the paths.',
       z.object({
         workflow: z.string().describe('A name from list_workflows or an absolute path to a .json'),
         params: z.record(z.string(), z.unknown()).optional(),
