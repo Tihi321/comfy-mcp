@@ -10,7 +10,7 @@ It is plain Node 24 (no Electron). It serves Streamable HTTP on `127.0.0.1:7460/
 |---|---|
 | `status` | ComfyUI version, VRAM/RAM, queue, which engines are ready (model files present), background-removal models, model files per folder, running jobs, the output folder |
 | `generate_image` | Text to PNG. Engines `z-image-turbo` (default, 1024²), `qwen-image-2.1-turbo`, `qwen-image-2.1` (1328²), `krea2-turbo`. `prompt, negative, width, height, seed, count, steps, cfg` |
-| `edit_image` | Qwen-Image 2.1 edit: `image` / `images` (1-16 absolute paths) + instruction. The size follows the first image unless `width`/`height` are given |
+| `edit_image` | Qwen-Image 2.1 edit: `image` / `images` (1-16 absolute paths) + instruction. Engines `qwen-image-2.1-edit` (default, 25 steps) and `qwen-image-2.1-turbo-edit` (fixed 8-step sigma schedule, much faster; ignores `steps`). The size follows the first image unless `width`/`height` are given |
 | `remove_background` | BiRefNet through ComfyUI's core `RemoveBackground` node; writes a PNG with alpha |
 | `generate_music` | `ace-step-v1` (default), `ace-step-v1-instrumental`, `yue2`, `minimax-music-3`. `tags, lyrics, seconds, seed, steps, format` (mp3 default; flac, opus, wav) |
 | `generate_speech` | A mapped TTS workflow (default `chatterbox-multilingual`, 23 languages, no Croatian). `text, language, voice_ref` |

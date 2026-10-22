@@ -40,6 +40,7 @@ const seed = z.number().int().min(0).optional().describe('Fixed seed for reprodu
 const absPath = (what: string) => z.string().describe(`Absolute path of ${what}`)
 
 const imageEngines = enginesOfKind('image').filter((id) => !ENGINES[id]!.acceptsReferences) as [string, ...string[]]
+const editEngines = enginesOfKind('image').filter((id) => ENGINES[id]!.acceptsReferences) as [string, ...string[]]
 const audioEngines = enginesOfKind('audio') as [string, ...string[]]
 
 export function buildTools(svc: ComfyService): Tool[] {
@@ -80,9 +81,10 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'edit_image',
-      'Edit images with Qwen-Image 2.1 edit: pass 1-16 absolute image paths and an instruction ("give her a red coat, keep the face and pose"). The images are uploaded to ComfyUI and spliced into the model input, so the subject is kept. Without width/height the output matches the first image. Returns the PNG paths.',
+      'Edit images with Qwen-Image 2.1. Engines: qwen-image-2.1-edit (default, 25 steps) or qwen-image-2.1-turbo-edit (8 steps, much faster, ignores steps). Pass 1-16 absolute image paths and an instruction ("give her a red coat, keep the face and pose"). The images are uploaded to ComfyUI and spliced into the model input, so the subject is kept. Without width/height the output matches the first image. Returns the PNG paths.',
       z.object({
         prompt: z.string().describe('The edit instruction'),
+        engine: z.enum(editEngines).optional(),
         image: z.string().optional().describe('Absolute path of the image to edit (or use images)'),
         images: z.array(z.string()).optional().describe('Absolute paths of the reference images, in order'),
         negative: z.string().optional(),
@@ -90,7 +92,7 @@ export function buildTools(svc: ComfyService): Tool[] {
         height: z.number().int().min(64).max(4096).optional(),
         seed,
         count: z.number().int().min(1).max(8).optional(),
-        steps: z.number().int().min(1).max(150).optional().describe('Sampler steps (default 25)'),
+        steps: z.number().int().min(1).max(150).optional().describe('Sampler steps (default 25; ignored by the turbo edit engine, which always runs 8)'),
         out,
         wait
       }),

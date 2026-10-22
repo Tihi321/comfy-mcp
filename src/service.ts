@@ -62,6 +62,7 @@ export interface ImageArgs {
 export interface EditArgs {
   prompt: string
   images: string[]
+  engine?: string
   negative?: string
   width?: number
   height?: number
@@ -242,8 +243,11 @@ export class ComfyService {
   }
 
   editImage(a: EditArgs): Job {
-    const engineId = 'qwen-image-2.1-edit'
-    const engine = ENGINES[engineId]!
+    const engineId = a.engine ?? 'qwen-image-2.1-edit'
+    const engine = ENGINES[engineId]
+    if (!engine || engine.kind !== 'image' || !engine.acceptsReferences) {
+      throw new Error(`engine must be one of ${enginesOfKind('image').filter((id) => ENGINES[id]!.acceptsReferences).join(', ')}`)
+    }
     const prompt = a.prompt.trim()
     if (!prompt) throw new Error('prompt is empty')
     if (a.images.length === 0 || a.images.length > 16) throw new Error('images must list 1 to 16 image paths')
@@ -254,6 +258,7 @@ export class ComfyService {
     if ((a.width === undefined) !== (a.height === undefined)) throw new Error('give both width and height, or neither (then the first image sets the size)')
     const seeds = this.seedsFor(a.seed, count)
     const info: Record<string, unknown> = { engine: engineId, ...(explicitSize ? { width: snap16(a.width!), height: snap16(a.height!) } : { size: 'from the first image' }) }
+    if (a.steps !== undefined && engine.defaults.sigmas !== undefined) info.note = `${engineId} uses its fixed ${engine.defaults.steps}-step schedule and ignores steps`
     return this.jobs.start('edit_image', `${engineId} from ${images.length} image(s): ${prompt.slice(0, 80)}`, async (job, signal) => {
       job.seeds = seeds
       job.progress = 'upload'
