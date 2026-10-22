@@ -1,0 +1,83 @@
+{
+  "1": {
+    "class_type": "F5TTSEngineNode",
+    "inputs": {
+      "language": "local:F5TTS_v1_Base",
+      "device": "auto",
+      "temperature": 0.8,
+      "speed": 1,
+      "target_rms": 0.1,
+      "cross_fade_duration": 0.15,
+      "nfe_step": 32,
+      "cfg_strength": 2
+    },
+    "_meta": {
+      "title": "F5TTSEngineNode"
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {
+      "audio": "comfy-mcp/voice_ref.wav"
+    },
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "3": {
+    "class_type": "CharacterVoicesNode",
+    "inputs": {
+      "voice_name": "voices_examples/female/female_01.wav",
+      "reference_text": "",
+      "trim_start": 0,
+      "trim_end": 0,
+      "customized": false,
+      "opt_audio_input": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "CharacterVoicesNode"
+    }
+  },
+  "4": {
+    "class_type": "UnifiedTTSTextNode",
+    "inputs": {
+      "TTS_engine": [
+        "1",
+        0
+      ],
+      "text": "Hello, this is a test.",
+      "narrator_voice": "none",
+      "seed": 1,
+      "opt_narrator": [
+        "3",
+        0
+      ],
+      "enable_chunking": true,
+      "max_chars_per_chunk": 400,
+      "chunk_combination_method": "auto",
+      "silence_between_chunks_ms": 100,
+      "enable_audio_cache": true,
+      "batch_size": 0
+    },
+    "_meta": {
+      "title": "UnifiedTTSTextNode"
+    }
+  },
+  "5": {
+    "class_type": "SaveAudioMP3",
+    "inputs": {
+      "filename_prefix": "comfy-mcp/speech",
+      "quality": "V0",
+      "audio": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "SaveAudioMP3"
+    }
+  }
+}

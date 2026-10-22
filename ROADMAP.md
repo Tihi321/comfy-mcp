@@ -15,7 +15,8 @@ What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\
 
 ## Speech
 
-- **More speech engines.** Only `chatterbox-multilingual` has a mapping, and it has no Croatian. F5, IndexTTS-2 (Croatian-capable), Qwen3-TTS and the rest of the TTS Audio Suite need an API export plus a `.map.yaml` in `workflows/`.
+- [x] **More speech engines.** Only `chatterbox-multilingual` has a mapping, and it has no Croatian. F5, IndexTTS-2 (Croatian-capable), Qwen3-TTS and the rest of the TTS Audio Suite need an API export plus a `.map.yaml` in `workflows/`.
+  Done in CMC-05: new workflows `f5-tts`, `indextts-2`, `qwen3-tts` and `higgs-audio-v3`. IndexTTS-2 turned out not to speak Croatian; Higgs Audio v3 does and is the Croatian engine. All four produced speech in live runs. The rest of the suite (VibeVoice, CosyVoice, Fish, OmniVoice, ...) is not mapped.
 
 ## Robustness
 

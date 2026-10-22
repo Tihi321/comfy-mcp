@@ -1,0 +1,17 @@
+# Mapping for f5-tts.json (TTS Audio Suite: F5TTSEngineNode -> Unified TTS Text -> SaveAudioMP3).
+kind: audio
+text: { node: "4", input: text }
+seed: { node: "4", input: seed }
+# The voice reference clip: uploaded to ComfyUI's input folder and set on the LoadAudio node. Without voice_ref the node is dropped
+# and the Character Voices library voice below is used.
+voiceRef: { node: "2", input: audio }
+# The exact words spoken in the voice reference clip.
+voiceText: { node: "3", input: reference_text }
+output: "5"
+defaultVoice: voices_examples/female/female_01.wav
+# F5-TTS refuses a cloned voice without the transcript of the clip.
+needsVoiceText: true
+# The language input of F5 picks the model; only the English one is installed.
+language: { node: "1", input: language }
+languages:
+  en: local:F5TTS_v1_Base

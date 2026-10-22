@@ -30,14 +30,20 @@ export const mappingSchema = z.object({
   language: slotSchema.optional(),
   /** A LoadAudio input: the voice reference clip (uploaded first). */
   voiceRef: slotSchema.optional(),
+  /** The input that takes the transcript of the voice reference clip (some engines clone with it). */
+  voiceText: slotSchema.optional(),
   /** The node whose output is returned. */
   output: outputSchema,
   /** Language code (`en`, `de`) -> the value the language input expects, e.g. `English (en)`. */
   languages: z.record(z.string(), z.string()).optional(),
+  /** The voice the workflow speaks with when no voice reference is given (reported as the result's voice). */
+  defaultVoice: z.string().optional(),
+  /** Cloning a voice reference needs its transcript (voice_text). */
+  needsVoiceText: z.boolean().default(false),
   kind: z.enum(['image', 'audio']).optional()
 })
 export type Mapping = z.output<typeof mappingSchema>
-export const MAPPED_FIELDS = ['prompt', 'negative', 'width', 'height', 'seed', 'steps', 'reference', 'text', 'language', 'voiceRef'] as const
+export const MAPPED_FIELDS = ['prompt', 'negative', 'width', 'height', 'seed', 'steps', 'reference', 'text', 'language', 'voiceRef', 'voiceText'] as const
 export type MappedField = (typeof MAPPED_FIELDS)[number]
 /** Mapped fields that take a file path (uploaded to ComfyUI's input folder). */
 export const FILE_FIELDS: readonly MappedField[] = ['reference', 'voiceRef']

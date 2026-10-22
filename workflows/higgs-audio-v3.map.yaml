@@ -1,0 +1,13 @@
+# Mapping for higgs-audio-v3.json (TTS Audio Suite: HiggsAudioV3EngineNode -> Unified TTS Text -> SaveAudioMP3).
+kind: audio
+text: { node: "4", input: text }
+seed: { node: "4", input: seed }
+# The voice reference clip: uploaded to ComfyUI's input folder and set on the LoadAudio node. Without voice_ref the node is dropped
+# and the Character Voices library voice below is used.
+voiceRef: { node: "2", input: audio }
+# The exact words spoken in the voice reference clip.
+voiceText: { node: "3", input: reference_text }
+output: "5"
+defaultVoice: voices_examples/higgs_audio/en_woman.wav
+# Higgs Audio v3 speaks 100+ languages including Croatian (hr); there is no language input and no code table, any code is accepted.
+# Research / non-commercial licence.

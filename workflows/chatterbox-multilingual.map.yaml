@@ -9,7 +9,7 @@ voiceRef: { node: "2", input: audio }
 output: "3"
 # Language code -> the value the node's language dropdown expects.
 # NOTE: the Chatterbox multilingual node has NO Croatian (hr); `hr` is deliberately missing here.
-# For Croatian use another TTS Audio Suite engine (IndexTTS-2) with its own workflow + mapping.
+# For Croatian use the higgs-audio-v3 workflow.
 languages:
   en: English (en)
   ar: Arabic (ar)

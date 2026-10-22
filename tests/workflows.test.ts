@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -31,6 +31,30 @@ describe('saved workflows', () => {
     expect(wf.format).toBe('api')
     expect(wf.mapping?.text).toEqual({ node: '1', input: 'text' })
     expect(mappedValue(wf.mapping, 'language', 'de')).toBe('German (de)')
+  })
+
+  const bundled = readdirSync(repoWorkflows).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''))
+  it.each(bundled)('bundled workflow %s loads with a validating speech mapping', async (name) => {
+    const wf = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], name), noSchemas)
+    expect(wf.format).toBe('api')
+    expect(wf.mapping?.kind).toBe('audio')
+    expect(wf.mapping?.text).toBeDefined()
+    expect(wf.mapping?.voiceRef).toBeDefined()
+  })
+
+  it('resolves voiceText and the speech engine mappings', async () => {
+    const f5 = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'f5-tts'), noSchemas)
+    expect(resolveSlot(f5.graph, f5.mapping, 'voiceText')).toMatchObject({ node: '3', input: 'reference_text', field: 'voiceText' })
+    expect(f5.mapping?.needsVoiceText).toBe(true)
+    const higgs = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'higgs-audio-v3'), noSchemas)
+    expect(higgs.mapping?.language).toBeUndefined()
+    expect(higgs.mapping?.languages).toBeUndefined()
+    expect(higgs.mapping?.needsVoiceText).toBe(false)
+    const qwen = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'qwen3-tts'), noSchemas)
+    expect(mappedValue(qwen.mapping, 'language', 'de')).toBe('German')
+    const index = await loadWorkflow(await resolveWorkflowFile([repoWorkflows], 'indextts-2'), noSchemas)
+    expect(index.mapping?.language).toBeUndefined()
+    expect(Object.keys(index.mapping?.languages ?? {})).toEqual(['en', 'zh'])
   })
 
   it('resolves mapped names, node ids and titles', async () => {

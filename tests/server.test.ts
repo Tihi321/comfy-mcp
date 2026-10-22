@@ -129,6 +129,45 @@ describe('MCP server against a fake ComfyUI', () => {
     await client.close()
   })
 
+  it('speaks with f5-tts: voice_text goes to the reference text, no voice_ref drops the voice nodes', async () => {
+    const client = await connect()
+    const clip = path.join(outDir, 'clip.wav')
+    writeFileSync(clip, 'wav')
+    const r = await client.callTool({ name: 'generate_speech', arguments: { text: 'Hello there', workflow: 'f5-tts', voice_ref: clip, voice_text: 'the words in the clip', out: outDir } })
+    expect(r.isError).toBeFalsy()
+    const sent = [...comfy.prompts.values()].at(-1)!
+    expect(sent[3]!.inputs.reference_text).toBe('the words in the clip')
+    expect(sent[2]!.inputs.audio).toBe('comfy-mcp/up.png')
+    expect(sent[4]!.inputs.text).toBe('Hello there')
+    expect(sent[1]!.inputs.language).toBe('local:F5TTS_v1_Base')
+
+    const bare = await client.callTool({ name: 'generate_speech', arguments: { text: 'Hello again', workflow: 'f5-tts', out: outDir } })
+    expect(bare.isError).toBeFalsy()
+    const sent2 = [...comfy.prompts.values()].at(-1)!
+    expect(sent2[2]).toBeUndefined()
+    expect(sent2[3]!.inputs.opt_audio_input).toBeUndefined()
+    expect(JSON.stringify(bare.structuredContent)).toContain('default (voices_examples/female/female_01.wav)')
+    expect(JSON.stringify(bare.structuredContent)).not.toContain('run on past the text')
+
+    const missing = await client.callTool({ name: 'generate_speech', arguments: { text: 'x', workflow: 'f5-tts', voice_ref: clip, out: outDir } })
+    expect(missing.isError).toBe(true)
+    expect(JSON.stringify(missing.content)).toContain('needs voice_text')
+    await client.close()
+  })
+
+  it('validates the language against the mapping, with and without a language input', async () => {
+    const client = await connect()
+    const hr = await client.callTool({ name: 'generate_speech', arguments: { text: 'Dobar dan', language: 'hr', workflow: 'indextts-2', out: outDir } })
+    expect(hr.isError).toBe(true)
+    expect(JSON.stringify(hr.content)).toContain('higgs-audio-v3')
+    const ok = await client.callTool({ name: 'generate_speech', arguments: { text: 'Dobar dan', language: 'hr', workflow: 'higgs-audio-v3', out: outDir } })
+    expect(ok.isError).toBeFalsy()
+    const de = await client.callTool({ name: 'generate_speech', arguments: { text: 'Guten Tag', language: 'de', workflow: 'qwen3-tts', out: outDir } })
+    expect(de.isError).toBeFalsy()
+    expect([...comfy.prompts.values()].at(-1)![1]!.inputs.language).toBe('German')
+    await client.close()
+  })
+
   it('rejects relative output paths and missing inputs as tool errors', async () => {
     const client = await connect()
     const r1 = await client.callTool({ name: 'generate_image', arguments: { prompt: 'x', out: 'relative/dir' } })

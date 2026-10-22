@@ -87,6 +87,7 @@ export interface SpeechArgs {
   text: string
   language?: string
   voiceRef?: string
+  voiceText?: string
   seed?: number
   workflow?: string
   out?: string
@@ -349,13 +350,14 @@ export class ComfyService {
     if (!mapping?.text) throw new Error(`workflow ${wf.name} has no "text" in its .map.yaml, so it is not a speech workflow`)
     const graph = structuredClone(wf.graph)
     const language = a.language ?? 'en'
-    if (mapping.language) {
-      const value = mappedValue(mapping, 'language', language)
-      if (mapping.languages && !Object.values(mapping.languages).includes(String(value))) {
-        throw new Error(`language "${language}" is not supported by ${wf.name}; use one of ${Object.keys(mapping.languages).join(', ')}`)
-      }
-      setInput(graph, mapping.language, value)
+    if (mapping.languages && !Object.hasOwn(mapping.languages, language)) {
+      const hint = language === 'hr' && wf.name !== 'higgs-audio-v3' ? '; for Croatian use workflow higgs-audio-v3' : ''
+      throw new Error(`language "${language}" is not supported by ${wf.name}; use one of ${Object.keys(mapping.languages).join(', ')}${hint}`)
     }
+    if (mapping.language) setInput(graph, mapping.language, mappedValue(mapping, 'language', language))
+    const voiceText = a.voiceText?.trim()
+    if (voiceRef && mapping.needsVoiceText && !voiceText) throw new Error(`${wf.name} needs voice_text: the exact words spoken in voice_ref`)
+    if (voiceRef && voiceText && mapping.voiceText) setInput(graph, mapping.voiceText, voiceText)
     setInput(graph, mapping.text, text)
     const seed = a.seed ?? randomSeed()
     if (mapping.seed) setInput(graph, mapping.seed, seed)
@@ -368,10 +370,11 @@ export class ComfyService {
       const loader = graph[mapping.voiceRef.node]?.class_type ?? ''
       const choices = comboOptions((await this.objectInfo())[loader]?.input?.required?.[mapping.voiceRef.input])
       if (typeof current === 'string' && choices.includes(current)) {
-        voice = `workflow default (${current})`
+        voice = mapping.defaultVoice ? `default (${mapping.defaultVoice})` : `workflow default (${current})`
       } else {
         dropNode(graph, mapping.voiceRef.node)
-        info.note = 'no voice reference: the built-in voice can run on past the text; pass voice_ref for reliable length'
+        if (mapping.defaultVoice) voice = `default (${mapping.defaultVoice})`
+        else info.note = 'no voice reference: the built-in voice can run on past the text; pass voice_ref for reliable length'
       }
     }
     info.voice = voice

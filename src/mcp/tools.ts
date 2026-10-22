@@ -125,17 +125,18 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'generate_speech',
-      'Text to speech through a saved ComfyUI TTS workflow (default chatterbox-multilingual: 23 languages, not Croatian). Pass voice_ref (an absolute path to a short clean audio clip, 5-15 s) to clone a voice; without it the workflow\'s own reference clip is used when ComfyUI has it, else the built-in voice (which can run on past the text). Returns the audio path.',
+      'Text to speech through a saved ComfyUI TTS workflow (workflow, default chatterbox-multilingual). Workflows: chatterbox-multilingual (23 languages, not Croatian); f5-tts (English; cloning needs voice_text); indextts-2 (en, zh); qwen3-tts (en, zh, ja, ko, de, fr, ru, pt, es, it); higgs-audio-v3 (100+ languages including Croatian, hr; research licence, the first run downloads ~8 GB). Pass voice_ref (an absolute path to a short clean audio clip, 5-15 s) to clone a voice, plus voice_text (the exact words spoken in it) where required. Without voice_ref the workflow uses its default voice (chatterbox: its own reference clip when ComfyUI has it, else the built-in voice, which can run on past the text). Returns the audio path.',
       z.object({
         text: z.string().describe('What to say'),
-        language: z.string().optional().describe('Language code: en (default), de, fr, es, it, ja, zh, ... (see the workflow mapping)'),
+        language: z.string().optional().describe('Language code: en (default), de, fr, es, it, ja, zh, hr (higgs-audio-v3 only), ... (see the workflow mapping)'),
         voice_ref: z.string().optional().describe('Absolute path of a voice reference clip (wav/mp3/flac)'),
+        voice_text: z.string().optional().describe('The exact words spoken in voice_ref; required by f5-tts, optional for higgs-audio-v3'),
         seed,
-        workflow: z.string().optional().describe('A mapped TTS workflow (needs a .map.yaml with text); default chatterbox-multilingual'),
+        workflow: z.string().optional().describe('A mapped TTS workflow: chatterbox-multilingual (default), f5-tts, indextts-2, qwen3-tts, higgs-audio-v3, or your own (needs a .map.yaml with text)'),
         out,
         wait
       }),
-      async (a) => settle(await svc.generateSpeech({ ...a, voiceRef: a.voice_ref }), a.wait)
+      async (a) => settle(await svc.generateSpeech({ ...a, voiceRef: a.voice_ref, voiceText: a.voice_text }), a.wait)
     ),
     def(
       'list_workflows',
