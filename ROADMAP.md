@@ -7,6 +7,11 @@ What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\
 - MCP server on `127.0.0.1:7460/mcp`, generating through ComfyUI on 8188: images, edits, cutouts, music, speech and saved workflows. Outputs go to the hub's `output/comfy` unless a tool gets an absolute `out` path.
 - Every item below is done (CMC-03 to CMC-06, one commit each). Open follow-ups: bypassed subgraphs are dropped rather than passed through; the rest of the TTS Audio Suite engines are not mapped.
 
+## Image engines
+
+- [x] **MOSS-Image.** ComfyUI's new text-to-image template `image_moss_image_t2i` as engine `moss-image` (hub ticket HUB-20).
+  Done in CMC-07: the template's graph without its prompt enhancer and skip-layer guidance (both off by default there); 1024x1024, 25 steps, CFG 2.5, er_sde/simple, negative prompt. Files group `moss` in `--files`.
+
 ## Workflows
 
 - [x] **Subgraph workflows.** Most of ComfyUI's saved template workflows (Qwen-Image 2.1, Z-Image, Krea 2, BiRefNet, MiniMax, YuE2) put their nodes in a subgraph; `run_workflow` refuses them with a hint to use Export (API). Expanding subgraphs in the UI-to-API converter would make every saved workflow runnable.

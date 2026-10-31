@@ -63,11 +63,11 @@ export function buildTools(svc: ComfyService): Tool[] {
     ),
     def(
       'generate_image',
-      `Text to image with the local ComfyUI. Engines: z-image-turbo (default, 8 steps, fast, 1024x1024), qwen-image-2.1-turbo (8 steps, 1328x1328), qwen-image-2.1 (25 steps, best text rendering and prompt following, slower), krea2-turbo (8 steps). Width and height snap to multiples of 16. count queues several images with seeds seed, seed+1, ... Returns the PNG paths.`,
+      `Text to image with the local ComfyUI. Engines: z-image-turbo (default, 8 steps, fast, 1024x1024), qwen-image-2.1-turbo (8 steps, 1328x1328), qwen-image-2.1 (25 steps, best text rendering and prompt following, slower), krea2-turbo (8 steps), moss-image (25 steps, 1024x1024, strong English and Chinese text rendering, takes a negative prompt). Width and height snap to multiples of 16. count queues several images with seeds seed, seed+1, ... Returns the PNG paths.`,
       z.object({
         prompt: z.string().describe('What to draw: subject, style, lighting, background'),
         engine: z.enum(imageEngines).optional(),
-        negative: z.string().optional().describe('Negative prompt (qwen-image-2.1 engines only; the turbo templates ignore it)'),
+        negative: z.string().optional().describe('Negative prompt (qwen-image-2.1 and moss-image only; the turbo templates ignore it)'),
         width: z.number().int().min(64).max(4096).optional(),
         height: z.number().int().min(64).max(4096).optional(),
         seed,

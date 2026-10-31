@@ -12,6 +12,7 @@
  *   image  qwen-image-2.1-turbo-edit turbo UNet image edit (ManualSigmas + SamplerCustomAdvanced, 8 steps)
  *   image  z-image-turbo             Z-Image-Turbo
  *   image  krea2-turbo               Krea 2 Turbo
+ *   image  moss-image                MOSS-Image text-to-image (negative prompt, no reference images)
  *   audio  ace-step-v1               ACE-Step v1 song (tags + lyrics)
  *   audio  ace-step-v1-instrumental  ACE-Step v1, instrumental (tags only)
  *   audio  yue2                      YuE2 text-to-music
@@ -48,6 +49,11 @@ export const DEFAULT_FILES = {
     clip: 'qwen3vl_4b_fp8_scaled.safetensors',
     vae: 'qwen_image_vae.safetensors'
   },
+  moss: {
+    unet: 'moss_image_sft_int8_convrot.safetensors',
+    clip: 'qwen3.5_9b_w4a8_gptq.safetensors',
+    vae: 'flux2-vae_small.safetensors'
+  },
   audio: {
     aceCheckpoint: 'ace_step_v1_3.5b.safetensors',
     yue2Checkpoint: 'yue2_3b_int8_convrot.safetensors',
@@ -61,6 +67,7 @@ export type FileGroups = {
   qwen: Record<string, string>
   zImage: Record<string, string>
   krea2: Record<string, string>
+  moss: Record<string, string>
   audio: Record<string, string>
 }
 
@@ -282,6 +289,29 @@ export function buildKrea2(o: BuildOpts): Graph {
 }
 
 /**
+ * MOSS-Image (template `image_moss_image_t2i`): `moss_image` text encoder, FLUX.2 latent, plain KSampler with a real negative
+ * prompt. The template's prompt enhancer and skip-layer-guidance switches are off, so neither node is built.
+ */
+export const MOSS_NEGATIVE = 'nsfw, worst quality, bad anatomy, watermark, jpeg artifact'
+export function buildMossImage(o: BuildOpts): Graph {
+  const { files, seed, steps, cfg, sampler, scheduler, denoise = 1 } = o
+  return {
+    1: { class_type: 'UNETLoader', inputs: { unet_name: files.unet, weight_dtype: 'default' } },
+    2: { class_type: 'CLIPLoader', inputs: { clip_name: files.clip, type: 'moss_image', device: 'default' } },
+    3: { class_type: 'VAELoader', inputs: { vae_name: files.vae } },
+    4: { class_type: 'CLIPTextEncode', inputs: { clip: ref(2), text: o.prompt ?? '' } },
+    5: { class_type: 'CLIPTextEncode', inputs: { clip: ref(2), text: o.negativePrompt || MOSS_NEGATIVE } },
+    6: { class_type: 'EmptyFlux2LatentImage', inputs: { width: o.width, height: o.height, batch_size: 1 } },
+    7: {
+      class_type: 'KSampler',
+      inputs: { model: ref(1), seed, steps, cfg, sampler_name: sampler, scheduler, denoise, positive: ref(4), negative: ref(5), latent_image: ref(6) }
+    },
+    8: { class_type: 'VAEDecode', inputs: { samples: ref(7), vae: ref(3) } },
+    9: { class_type: 'SaveImage', inputs: { images: ref(8), filename_prefix: o.filenamePrefix } }
+  }
+}
+
+/**
  * The audio save node. `wav` uses the plain `SaveAudio` node; the compressed formats go through `SaveAudioAdvanced`,
  * which takes a per-format quality.
  */
@@ -437,6 +467,11 @@ export const ENGINES: Record<string, EngineDef> = {
     build: buildKrea2,
     defaults: { steps: 8, cfg: 1, sampler: 'euler', scheduler: 'simple', denoise: 1, shift: 1.15 }
   },
+  'moss-image': {
+    kind: 'image', label: 'MOSS-Image (text to image)', fileGroup: 'moss', requires: [['unet', 'diffusion_models'], ['clip', 'text_encoders'], ['vae', 'vae']], size: SQUARE_1K, usesNegative: true,
+    build: buildMossImage,
+    defaults: { steps: 25, cfg: 2.5, sampler: 'er_sde', scheduler: 'simple', denoise: 1 }
+  },
   'ace-step-v1': {
     kind: 'audio', label: 'ACE-Step v1 (song: tags + lyrics)', fileGroup: 'audio', requires: [['aceCheckpoint', 'checkpoints']],
     build: buildAceStep, defaults: { ...ACE_DEFAULTS }
@@ -469,6 +504,7 @@ export function mergeFiles(overrides: Partial<Record<keyof FileGroups, Record<st
     qwen: { ...DEFAULT_FILES.qwen, ...overrides?.qwen },
     zImage: { ...DEFAULT_FILES.zImage, ...overrides?.zImage },
     krea2: { ...DEFAULT_FILES.krea2, ...overrides?.krea2 },
+    moss: { ...DEFAULT_FILES.moss, ...overrides?.moss },
     audio: { ...DEFAULT_FILES.audio, ...overrides?.audio }
   }
 }

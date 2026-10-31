@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { ENGINES, mergeFiles } from '../src/comfy/graphs'
 
+describe('moss-image graph', () => {
+  const engine = ENGINES['moss-image']!
+  const build = (o: Record<string, unknown> = {}) =>
+    engine.build({ files: { ...mergeFiles(undefined).moss }, filenamePrefix: 'p', seed: 7, width: 1024, height: 1024, prompt: 'a cat', ...engine.defaults, ...o } as never)
+
+  it('uses the moss_image text encoder, the FLUX.2 latent and a KSampler with the template defaults', () => {
+    const g = build()
+    expect(g[2]!.inputs.type).toBe('moss_image')
+    expect(g[6]).toMatchObject({ class_type: 'EmptyFlux2LatentImage', inputs: { width: 1024, height: 1024 } })
+    expect(g[7]!.inputs).toMatchObject({ steps: 25, cfg: 2.5, sampler_name: 'er_sde', scheduler: 'simple', seed: 7 })
+    expect(Object.values(g).some((n) => n.class_type === 'TextGenerate' || n.class_type === 'SkipLayerGuidanceDiTSimple')).toBe(false)
+  })
+
+  it('encodes the given negative prompt, or the recommended one', () => {
+    expect(build({ negativePrompt: 'blurry' })[5]!.inputs.text).toBe('blurry')
+    expect(String(build()[5]!.inputs.text)).toContain('worst quality')
+    expect(engine.usesNegative).toBe(true)
+  })
+})
+
 describe('qwen-image-2.1-turbo-edit graph', () => {
   const engine = ENGINES['qwen-image-2.1-turbo-edit']!
   const files = mergeFiles(undefined)
