@@ -28,3 +28,6 @@ What comfy-mcp still lacks, found while the creative hub (`C:\projects\Personal\
 
 - [x] **Jobs live in memory.** A restart forgets job ids (written files stay).
   Done in CMC-06: jobs are saved to `--state` (default `~/ComfyMCP/jobs.json`), and running jobs are resumed after a restart. Live check: a `generate_image` job survived a hard kill and finished after the restart. A job killed within 250 ms of starting (before its first save) is still lost.
+
+- [x] **Local node fixes are lost on an update.** MOSS-SoundEffect works only with two hand edits to third-party nodes (chatterbox's `torch.load` wrapper, TTS-Audio-Suite's `torch.compile` without Triton), and a node update undoes them (hub bugfix run after HUB-31).
+  Done in CMC-08: `out/patches.js check|apply|revert` keeps them as text patches; the hub's `hub.ps1 status` runs the check.

@@ -65,6 +65,21 @@ In the creative hub, `pwsh -File scripts\hub.ps1 start comfy-mcp` starts it (aft
 claude mcp add --transport http comfy-mcp http://127.0.0.1:7460/mcp
 ```
 
+## Local fixes to ComfyUI nodes
+
+Two third-party nodes need a small fix on a Windows machine without Triton before MOSS-SoundEffect runs. A node update overwrites them, so `src/patches.ts` keeps them as text patches (the node repos are not forked):
+
+- `chatterbox-torch-load`: `comfyui_fill-chatterbox/chatterbox_node.py` wraps `torch.load` and adds `map_location` even when a caller passed it positionally.
+- `moss-sfx-compile-without-triton`: TTS-Audio-Suite's MOSS-SoundEffect v2 `wan_audio.py` runs `torch.compile` only when Triton imports.
+
+```powershell
+node out/patches.js check  --comfy-dir <ComfyUI folder>   # applied | needed | unknown | missing-file; exit 0 when all are applied
+node out/patches.js apply  --comfy-dir <ComfyUI folder>   # after a node update; then restart ComfyUI
+node out/patches.js revert --comfy-dir <ComfyUI folder>   # before an update that refuses to overwrite a changed file
+```
+
+`COMFYUI_DIR` replaces `--comfy-dir`, and `--json` prints the result as JSON. `unknown` means the upstream code changed: compare it with the patch by hand. In the creative hub, `hub.ps1 status` shows the check and `hub.ps1 comfy-patches apply` applies them.
+
 ## Develop
 
 ```powershell
